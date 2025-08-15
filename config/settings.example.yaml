@@ -1,0 +1,6 @@
+mode: console
+adapter: mock
+strategy: peter_lynch
+tickers: ["AAPL","MSFT","NVDA"]
+thresholds:
+  min_mos: 0.20
