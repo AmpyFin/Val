@@ -12,12 +12,14 @@ import (
 func main() {
 	mode := flag.String("mode", "console", "one of: console|broadcast|gui")
 	adapter := flag.String("adapter", "mock", "adapter name")
+	strategy := flag.String("strategy", "peter_lynch", "strategy name")
 	tickers := flag.String("tickers", "AAPL,MSFT,NVDA", "comma-separated tickers")
 	flag.Parse()
 
 	opts := pipeline.Options{
 		Mode:       output.Mode(*mode),
 		Adapter:    *adapter,
+		Strategy:   *strategy,
 		TickersCSV: *tickers,
 	}
 	if err := pipeline.Run(opts); err != nil {

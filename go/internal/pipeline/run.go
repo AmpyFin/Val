@@ -6,11 +6,13 @@ import (
 
 	"val/internal/adapters"
 	"val/internal/output"
+	"val/internal/strategies"
 )
 
 type Options struct {
 	Mode       output.Mode
 	Adapter    string
+	Strategy   string
 	TickersCSV string
 }
 
@@ -24,6 +26,42 @@ func Run(opts Options) error {
 	if err != nil {
 		return err
 	}
+
+	evals, err := strategies.Eval(opts.Strategy, raw)
+	if err != nil {
+		return err
+	}
+
+	fairByTicker := map[string]strategies.EvalResult{}
+	for _, e := range evals {
+		fairByTicker[e.Ticker] = e
+	}
+
+	final := make([]map[string]any, 0, len(raw))
+	for _, r := range raw {
+		t, _ := r["ticker"].(string)
+		price, _ := r["price"].(float64)
+		ev, ok := fairByTicker[t]
+		if !ok {
+			continue
+		}
+		fv := ev.FairValue
+		mos := 0.0
+		if fv > 0 {
+			mos = (fv - price) / fv
+		}
+		row := map[string]any{
+			"ticker":      t,
+			"price":       price,
+			"fair_value":  fv,
+			"mos":         mos,
+			"strategy":    opts.Strategy,
+			"notes":       ev.Notes,
+			"conf":        ev.Conf,
+		}
+		final = append(final, row)
+	}
+
 	var sink output.Sink
 	switch opts.Mode {
 	case output.ModeConsole:
@@ -35,7 +73,7 @@ func Run(opts Options) error {
 	default:
 		return errors.New("unknown mode")
 	}
-	return sink.Publish(raw)
+	return sink.Publish(final)
 }
 
 func splitCSV(s string) []string {
