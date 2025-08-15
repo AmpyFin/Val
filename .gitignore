@@ -1,0 +1,14 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Go
+bin/
+dist/
+
+# Node (future GUI)
+node_modules/
+
+# OS
+.DS_Store
