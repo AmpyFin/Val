@@ -1,32 +1,26 @@
 package main
 
 import (
-	"encoding/json"
+	"flag"
 	"log"
-	"net/http"
-	"os"
+
+	"val/internal/output"
+	"val/internal/pipeline"
+	_ "val/internal/adapters"
 )
 
-func health(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status":  "ok",
-		"service": "vald",
-		"version": "0.0.1",
-	})
-}
-
 func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", health)
+	mode := flag.String("mode", "console", "one of: console|broadcast|gui")
+	adapter := flag.String("adapter", "mock", "adapter name")
+	tickers := flag.String("tickers", "AAPL,MSFT,NVDA", "comma-separated tickers")
+	flag.Parse()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	opts := pipeline.Options{
+		Mode:       output.Mode(*mode),
+		Adapter:    *adapter,
+		TickersCSV: *tickers,
 	}
-	addr := ":" + port
-	log.Printf("vald listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := pipeline.Run(opts); err != nil {
 		log.Fatal(err)
 	}
 }
