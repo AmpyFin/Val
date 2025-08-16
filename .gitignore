@@ -1,14 +1,31 @@
 # Python
-.venv/
 __pycache__/
-*.pyc
-
-# Go
-bin/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv*/
+pip-wheel-metadata/
 dist/
+build/
+*.log
 
-# Node (future GUI)
-node_modules/
+# Env & secrets
+.env
+.env.*
+!.env.example
 
-# OS
+# Editors / tooling
+.vscode/
+.idea/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# macOS / OS
 .DS_Store
+
+# Project outputs (keep folder but ignore files)
+out/*
+!out/.gitkeep

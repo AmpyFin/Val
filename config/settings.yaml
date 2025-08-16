@@ -1,6 +1,35 @@
-mode: console
-adapter: mock
-strategy: peter_lynch
-tickers: ["AAPL","MSFT","NVDA"]
+mode: console          # console | gui | broadcast
+run: once              # once | continuous
+adapters: ["alpaca","yfinance", "polygon", "fmp", "mock_local"]
+strategies: ["peter_lynch", "psales_rev"]
+tickers: [
+  "AAPL",
+  "MSFT",
+  "NVDA",
+  "GOOG",
+  "AMZN",
+  "TSLA",
+  "META",
+  "NVAX",
+  "PLTR",
+  "PLUG",
+  "CTMX",
+  "RIVN",
+]
+
 thresholds:
-  min_mos: 0.20
+  min_mos: 0.10
+
+caps:
+  max_growth_pe: 50
+  min_growth_pe: 5
+
+schedule:
+  interval_sec: 60
+
+logging:
+  level: INFO
+
+outputs:
+  json_path: "out/results.json"   # file we’ll write each run
+  include_per_strategy: true      # include strategy breakdown in the JSON
