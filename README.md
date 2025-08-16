@@ -509,18 +509,8 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 ---
 
-## Support
-
-- **Issues:** Use the [GitHub Issues](https://github.com/yourusername/val/issues) page
-- **Discussions:** Join the [GitHub Discussions](https://github.com/yourusername/val/discussions) for questions and ideas
-- **Documentation:** Check the inline code comments and this README
-
----
-
 **Happy building!** 🚀
 
 If you have tweaks you want (new strategies, a different data source, or a custom table in the dashboard), the registry pattern makes it easy—drop in a file, register it, and select it on the CLI.
 
----
 
-*Built with ❤️ for the open-source financial analysis community.*
