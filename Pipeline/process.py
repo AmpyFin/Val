@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from Registries.strategies import build_strategies
+from .weighting import calculate_strategy_weights, apply_weighted_valuation
 
 def _compute_mos(price: Optional[float], fv: Optional[float]) -> Optional[float]:
     if price is None or fv is None:
@@ -66,49 +67,52 @@ def run(ctx):
 
         logger.info(f"[process] {sname}: done for {len(ctx.valuations[sname])} tickers")
 
-    # Build per-ticker summary (select median fair value)
+    # Build per-ticker summary using dynamic weighting
     min_mos = float(ctx.config.thresholds.get("min_mos", 0.20))
     for t in ctx.tickers:
         price = ctx.derived.get(t, {}).get("price")
+        ticker_data = ctx.derived.get(t, {})
         
-        # Collect all valid fair values and their corresponding MoS
-        valid_fvs = []
+        # Calculate dynamic weights based on company characteristics
+        weights = calculate_strategy_weights(ticker_data, ctx.config)
+        
+        # Collect strategy valuations
+        strategy_valuations = {}
         for sname, per_ticker in ctx.results["per_strategy"].items():
             entry = per_ticker.get(t)
-            if not entry:
-                continue
-            fv = entry.get("fv")
-            mos = entry.get("mos")
-            if fv is not None and mos is not None:
-                valid_fvs.append({"strategy": sname, "fv": fv, "mos": mos})
+            if entry and entry.get("fv") is not None:
+                strategy_valuations[sname] = entry["fv"]
         
-        # Calculate median fair value
-        if valid_fvs:
-            # Sort by fair value to find median
-            valid_fvs.sort(key=lambda x: x["fv"])
-            median_idx = len(valid_fvs) // 2
-            if len(valid_fvs) % 2 == 0:
-                # Even number of values - take average of two middle values
-                median_fv = (valid_fvs[median_idx - 1]["fv"] + valid_fvs[median_idx]["fv"]) / 2
-                # Use the strategy with the closest fair value to median
-                median_strategy = valid_fvs[median_idx - 1]["strategy"]
-                median_mos = valid_fvs[median_idx - 1]["mos"]
+        # Apply weighted valuation
+        weighted_fv = apply_weighted_valuation(strategy_valuations, weights, logger)
+        
+        # Calculate MoS for weighted fair value
+        weighted_mos = _compute_mos(price, weighted_fv)
+        
+        # Determine which strategy contributed most to the weighted result
+        best_strategy = None
+        if strategy_valuations:
+            if "peter_lynch" in strategy_valuations and "psales_rev" in strategy_valuations:
+                # Both strategies available - use the one with higher weight
+                pl_weight, ps_weight = weights
+                best_strategy = "peter_lynch" if pl_weight > ps_weight else "psales_rev"
             else:
-                # Odd number of values - take middle value
-                median_fv = valid_fvs[median_idx]["fv"]
-                median_strategy = valid_fvs[median_idx]["strategy"]
-                median_mos = valid_fvs[median_idx]["mos"]
-        else:
-            median_fv = None
-            median_strategy = None
-            median_mos = None
-
+                # Only one strategy available
+                best_strategy = list(strategy_valuations.keys())[0]
+        
+        # Store weights for debugging/transparency
+        pl_weight, ps_weight = weights
+        
         ctx.results["summary"][t] = {
             "price": price,
-            "best_strategy": median_strategy,
-            "best_fv": median_fv,
-            "best_mos": median_mos,
-            "undervalued": (median_mos is not None and median_mos >= min_mos)
+            "best_strategy": best_strategy,
+            "best_fv": weighted_fv,
+            "best_mos": weighted_mos,
+            "undervalued": (weighted_mos is not None and weighted_mos >= min_mos),
+            "weights": {
+                "peter_lynch": round(pl_weight, 3),
+                "psales_rev": round(ps_weight, 3)
+            }
         }
 
     logger.info(f"[process] summary completed for {len(ctx.results['summary'])} tickers")

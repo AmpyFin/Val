@@ -15,7 +15,9 @@ class MockLocalAdapter(BaseAdapter):
         "ps_history",       # list[float]
         "growth_pct",       # % growth used by Peter Lynch
         "sector",
-        "shares_outstanding"
+        "shares_outstanding",
+        "net_income_ttm",
+        "revenue_ttm"
     ]
 
     def __init__(self, config: Any, logger: Optional[logging.Logger] = None):
@@ -34,6 +36,10 @@ class MockLocalAdapter(BaseAdapter):
         sector = rng.choice(SECTORS)
         shares_out = int(rng.uniform(10_000_000, 5_000_000_000))
 
+        # Calculate net income and revenue from EPS and sales per share
+        net_income_ttm = eps * shares_out if eps is not None else None
+        revenue_ttm = sps * shares_out if sps is not None else None
+        
         return {
             "price": price,
             "eps_ttm": eps,
@@ -41,5 +47,7 @@ class MockLocalAdapter(BaseAdapter):
             "ps_history": ps_history,
             "growth_pct": growth_pct,
             "sector": sector,
-            "shares_outstanding": shares_out
+            "shares_outstanding": shares_out,
+            "net_income_ttm": net_income_ttm,
+            "revenue_ttm": revenue_ttm
         }

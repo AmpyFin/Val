@@ -40,6 +40,8 @@ class FMPAdapter(BaseAdapter):
         "ps_history",
         "shares_outstanding",
         "growth_pct",  # best-effort (derived)
+        "net_income_ttm",
+        "revenue_ttm",
     ]
 
     def fetch_one(self, ticker: str) -> Dict[str, Any]:
@@ -79,7 +81,22 @@ class FMPAdapter(BaseAdapter):
                 if self.logger:
                     self.logger.debug(f"[fmp] profile failed for {ticker}: {e}")
 
-        # 2) PS ratio history (for PSalesReversion)
+        # 2) Net Income and Revenue TTM
+        try:
+            inc = _get_json(f"{FMP_BASE}/income-statement/{ticker}", params={"limit": 1, "apikey": key})
+            if isinstance(inc, list) and inc:
+                row = inc[0]
+                net_income = _pick(row, ["netIncome", "netIncomeTTM"])
+                revenue = _pick(row, ["revenue", "revenueTTM", "totalRevenue"])
+                if net_income is not None:
+                    out["net_income_ttm"] = round(net_income, 2)
+                if revenue is not None:
+                    out["revenue_ttm"] = round(revenue, 2)
+        except Exception as e:
+            if self.logger:
+                self.logger.debug(f"[fmp] income-statement failed for {ticker}: {e}")
+
+        # 3) PS ratio history (for PSalesReversion)
         try:
             ratios = _get_json(f"{FMP_BASE}/ratios/{ticker}", params={"limit": 48, "apikey": key})
             ps_vals = []
@@ -95,7 +112,7 @@ class FMPAdapter(BaseAdapter):
             if self.logger:
                 self.logger.debug(f"[fmp] ratios failed for {ticker}: {e}")
 
-        # 3) Derive growth_pct best-effort:
+        # 4) Derive growth_pct best-effort:
         #    Try revenue growth using income statements (annual).
         if "growth_pct" not in out:
             try:

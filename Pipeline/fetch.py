@@ -13,6 +13,8 @@ FIELDS = [
     "growth_pct",
     "sector",
     "shares_outstanding",
+    "net_income_ttm",
+    "revenue_ttm",
 ]
 
 def _merge_derived(tickers: List[str], adapters, raw: Dict[str, Dict[str, Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
@@ -27,6 +29,20 @@ def _merge_derived(tickers: List[str], adapters, raw: Dict[str, Dict[str, Dict[s
                     break
             if val is not None:
                 derived[t][f] = val
+        
+        # Calculate derived metrics
+        t_data = derived[t]
+        
+        # Calculate net margin if we have both net income and revenue
+        if t_data.get("net_income_ttm") is not None and t_data.get("revenue_ttm") is not None:
+            if t_data["revenue_ttm"] > 0:
+                t_data["net_margin"] = round(t_data["net_income_ttm"] / t_data["revenue_ttm"], 4)
+        
+        # Calculate net margin from EPS and sales per share if available
+        elif t_data.get("eps_ttm") is not None and t_data.get("sales_per_share") is not None:
+            if t_data["sales_per_share"] > 0:
+                t_data["net_margin"] = round(t_data["eps_ttm"] / t_data["sales_per_share"], 4)
+    
     return derived
 
 def run(ctx):

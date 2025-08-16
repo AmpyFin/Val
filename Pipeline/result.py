@@ -46,18 +46,26 @@ def _export_json(ctx, rows: List[Tuple[str, float, float, float, str, bool]]):
     payload: Dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "min_mos": float(cfg.thresholds.get("min_mos", 0.20)),
-        "tickers": [
-            {
-                "ticker": t,
-                "price": float(price),
-                "best_fair_value": float(fv),
-                "best_mos": float(mos),
-                "best_strategy": strat,
-                "undervalued": bool(uv),
-            }
-            for (t, price, fv, mos, strat, uv) in rows
-        ],
+        "tickers": [],
     }
+    
+    # Build ticker data with weights
+    for (t, price, fv, mos, strat, uv) in rows:
+        ticker_data = {
+            "ticker": t,
+            "price": float(price),
+            "best_fair_value": float(fv),
+            "best_mos": float(mos),
+            "best_strategy": strat,
+            "undervalued": bool(uv),
+        }
+        
+        # Add weights if available
+        summary = ctx.results.get("summary", {}).get(t, {})
+        if "weights" in summary:
+            ticker_data["weights"] = summary["weights"]
+        
+        payload["tickers"].append(ticker_data)
     if include_per_strategy:
         payload["per_strategy"] = ctx.results.get("per_strategy", {})
 
@@ -85,6 +93,7 @@ def run(ctx, limit: int = 50):
         table.add_column("Fair Value", justify="right")
         table.add_column("MoS", justify="right")
         table.add_column("Strategy", justify="left")
+        table.add_column("Weights", justify="left")
 
         for t, price, fv, mos, strat, _ in data[:lim]:
             mos_str = _fmt_pct(mos)
@@ -93,8 +102,17 @@ def run(ctx, limit: int = 50):
             elif mos is not None and mos < 0:
                 mos_str = f"[red]{mos_str}[/red]"
 
+            # Get weights for display
+            summary = ctx.results.get("summary", {}).get(t, {})
+            weights = summary.get("weights", {})
+            weights_str = ""
+            if weights:
+                pl_w = weights.get("peter_lynch", 0)
+                ps_w = weights.get("psales_rev", 0)
+                weights_str = f"PL:{pl_w:.1f} PS:{ps_w:.1f}"
+
             table.add_row(
-                t, _fmt_money(price), _fmt_money(fv), mos_str, strat
+                t, _fmt_money(price), _fmt_money(fv), mos_str, strat, weights_str
             )
         console.print(table)
 

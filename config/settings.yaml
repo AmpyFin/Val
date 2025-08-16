@@ -480,12 +480,27 @@ tickers: [
   "ZWS"
 ]
 
+
 thresholds:
   min_mos: 0.10
 
 caps:
   max_growth_pe: 50
   min_growth_pe: 5
+
+# Dynamic weighting configuration
+weighting:
+  # Net margin thresholds for strategy weighting
+  low_margin_threshold: 0.05    # < 5% net margin: favor P/S reversion
+  high_margin_threshold: 0.10   # > 10% net margin: favor Peter Lynch
+  
+  # Growth rate thresholds
+  negative_growth_penalty: 0.3  # Reduce Peter Lynch weight by 30% for negative growth
+  high_growth_boost: 0.2        # Increase Peter Lynch weight by 20% for >15% growth
+  
+  # Default weights when insufficient data
+  default_peter_lynch_weight: 0.5
+  default_psales_weight: 0.5
 
 schedule:
   interval_sec: 60

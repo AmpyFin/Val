@@ -22,6 +22,16 @@ class Settings(BaseModel):
     schedule: Dict[str, int] = Field(default_factory=lambda: {'interval_sec': 60})
     logging: Dict[str, Any] = Field(default_factory=lambda: {'level': 'INFO'})
 
+    # Dynamic weighting configuration
+    weighting: Dict[str, Any] = Field(default_factory=lambda: {
+        'low_margin_threshold': 0.05,
+        'high_margin_threshold': 0.10,
+        'negative_growth_penalty': 0.3,
+        'high_growth_boost': 0.2,
+        'default_peter_lynch_weight': 0.5,
+        'default_psales_weight': 0.5
+    })
+
     # optional flags (ok if you didn't add to YAML)
     data: Dict[str, Any] = Field(default_factory=lambda: {
         'allow_mock_fundamentals': False

@@ -1,6 +1,6 @@
 # AmpyFin — Val Model
 
-_A lightweight, open-source valuation pipeline that compares **current price** to **strategy-defined fair value** and surfaces opportunities with a configurable **Margin of Safety (MoS)**._
+_A lightweight, open-source valuation pipeline that compares **current price** to **strategy-defined fair value** and surfaces opportunities with a configurable **Margin of Safety (MoS)**. Now featuring **dynamic strategy weighting** based on company characteristics._
 
 > ⚠️ **Disclaimer:** This is developer tooling for research/education. It is **not** investment advice. Always do your own due diligence.
 
@@ -10,6 +10,7 @@ _A lightweight, open-source valuation pipeline that compares **current price** t
 
 - [What is the Val Model?](#what-is-the-val-model)
 - [Core Features](#core-features)
+- [Dynamic Strategy Weighting](#dynamic-strategy-weighting)
 - [Repository Structure](#repository-structure)
 - [Quick Start (Local)](#quick-start-local)
 - [Configuration](#configuration)
@@ -38,12 +39,14 @@ _A lightweight, open-source valuation pipeline that compares **current price** t
 
 The Val Model fetches market & fundamental data, computes **fair values** using one or more **valuation strategies** (e.g., Peter Lynch PEG, Price/Sales reversion), and compares them to current price to calculate **Margin of Safety (MoS)**. It can:
 
-- print a **Rich** console table,
+- print a **Rich** console table with **dynamic strategy weights**,
 - write a machine-readable **JSON** snapshot,
 - expose the snapshot over a **FastAPI** endpoint and a **WebSocket** stream,
 - serve a simple **web dashboard** for browsing/filtering results.
 
 The whole pipeline is designed to be **adapter-driven** and **strategy-driven**, so developers can swap data sources and valuation models at runtime.
+
+**NEW: Dynamic Strategy Weighting** - The system now automatically balances Peter Lynch vs P/S Reversion strategies based on company characteristics like net margin, growth rate, and earnings quality.
 
 ---
 
@@ -52,12 +55,58 @@ The whole pipeline is designed to be **adapter-driven** and **strategy-driven**,
 - **Pipeline stages:** `Fetch` (multithreaded) → `Process` (multithreaded) → `Result` (console + JSON export)
 - **Adapters:** `yfinance` (no vendor keys), `alpaca`, `polygon`, `fmp` (Financial Modeling Prep), `ibkr` (IBeam gateway), `mock_local`
 - **Strategies:** `peter_lynch`, `psales_rev`
+- **Dynamic Weighting:** Automatic strategy balancing based on company fundamentals
 - **Config-first, CLI override:** set defaults in `config/settings.yaml`, override with CLI flags
 - **Live outputs:** `out/results.json` + `/results` API + `/stream` WebSocket
 - **Dashboard:** built-in HTML/JS UI at `/` (served by FastAPI)
 - **Continuous mode:** run the pipeline on an interval to refresh results automatically
 - **Tests:** fast, network-free unit tests with `pytest`
 - **Dockerized:** run writer + API/dashboard together with `docker compose`
+
+---
+
+## Dynamic Strategy Weighting
+
+The Val Model now uses **intelligent weighting** to balance Peter Lynch vs P/S Reversion strategies based on company characteristics:
+
+### Weighting Logic
+
+**Net Margin-Based Weighting:**
+- **Low margin (< 5%):** 80% P/S Reversion, 20% Peter Lynch
+- **High margin (> 10%):** 80% Peter Lynch, 20% P/S Reversion  
+- **Medium margin (5-10%):** 60% Peter Lynch, 40% P/S Reversion
+
+**Growth Rate Adjustments:**
+- **Negative growth:** Reduce Peter Lynch weight by 30%
+- **High growth (> 15%):** Increase Peter Lynch weight by 20%
+
+**Earnings Quality:**
+- **Negative EPS:** 90% P/S Reversion, 10% Peter Lynch
+
+### Why This Matters
+
+**Netflix Example:**
+- **P/S Reversion:** $3000+ (overestimates due to historical bubble P/S ratios)
+- **Peter Lynch:** ~$1000 (more conservative, based on earnings growth)
+- **Dynamic Weight:** ~$1500 (balanced approach considering Netflix's mature growth phase)
+
+**Early-Stage Companies:**
+- **NVAX/CTMX:** Heavily weighted toward P/S Reversion (low margins, negative earnings)
+- **Established Tech:** Balanced toward Peter Lynch (high margins, stable earnings)
+
+### Configuration
+
+Adjust weighting behavior in `config/settings.yaml`:
+
+```yaml
+weighting:
+  low_margin_threshold: 0.05    # < 5% net margin: favor P/S reversion
+  high_margin_threshold: 0.10   # > 10% net margin: favor Peter Lynch
+  negative_growth_penalty: 0.3  # Reduce Peter Lynch weight by 30% for negative growth
+  high_growth_boost: 0.2        # Increase Peter Lynch weight by 20% for >15% growth
+  default_peter_lynch_weight: 0.5
+  default_psales_weight: 0.5
+```
 
 ---
 
@@ -81,6 +130,7 @@ The whole pipeline is designed to be **adapter-driven** and **strategy-driven**,
 │   ├── context.py
 │   ├── fetch.py
 │   ├── process.py
+│   ├── weighting.py          # NEW: Dynamic strategy weighting
 │   └── result.py
 ├── Registries/
 │   ├── adapters.py
@@ -123,14 +173,24 @@ python -m pip install -r requirements.txt
 # 2) (Optional) copy env template if you plan to use paid APIs
 cp .env.example .env
 
-# 3) Run once in console mode (no vendor keys needed thanks to yfinance)
-python main.py --adapters yfinance                --strategies peter_lynch,psales_rev                --tickers NVAX,CTMX,AAPL,MSFT,TSLA
+# 3) Run once in console mode with dynamic weighting (no vendor keys needed)
+python main.py --adapters yfinance                --strategies peter_lynch,psales_rev                --tickers NFLX,NVAX,AAPL,MSFT,TSLA
 
 # 4) Start the API (in a second terminal)
 python -m uvicorn server.api:app --host 127.0.0.1 --port 8000
 
 # 5) Open the dashboard
 # http://127.0.0.1:8000/
+```
+
+**Console Output Now Shows:**
+```
+┌─────────┬─────────┬──────────────┬─────────┬──────────┬──────────┐
+│ Ticker  │ Price   │ Fair Value   │ MoS     │ Strategy │ Weights  │
+├─────────┼─────────┼──────────────┼─────────┼──────────┼──────────┤
+│ NFLX    │ $485.09 │ $1,247.50    │ 61.1%   │ peter_lynch │ PL:0.6 PS:0.4 │
+│ NVAX    │ $9.58   │ $45.20       │ 78.8%   │ psales_rev  │ PL:0.2 PS:0.8 │
+└─────────┴─────────┴──────────────┴─────────┴──────────┴──────────┘
 ```
 
 ---
@@ -164,6 +224,20 @@ thresholds:
 caps:                         # used by some strategies (e.g., Peter Lynch growth PE clamps)
   max_growth_pe: 50
   min_growth_pe: 5
+
+# NEW: Dynamic weighting configuration
+weighting:
+  # Net margin thresholds for strategy weighting
+  low_margin_threshold: 0.05    # < 5% net margin: favor P/S reversion
+  high_margin_threshold: 0.10   # > 10% net margin: favor Peter Lynch
+  
+  # Growth rate thresholds
+  negative_growth_penalty: 0.3  # Reduce Peter Lynch weight by 30% for negative growth
+  high_growth_boost: 0.2        # Increase Peter Lynch weight by 20% for >15% growth
+  
+  # Default weights when insufficient data
+  default_peter_lynch_weight: 0.5
+  default_psales_weight: 0.5
 
 schedule:
   interval_sec: 60            # used by continuous mode if --interval not provided
@@ -204,10 +278,10 @@ AMPYFIN_RESULTS_PATH=out/results.json
 
 ### Console Mode
 
-One-shot run that prints a Rich table and writes `out/results.json`:
+One-shot run that prints a Rich table with **dynamic weights** and writes `out/results.json`:
 
 ```bash
-python main.py --adapters yfinance                --strategies peter_lynch,psales_rev                --tickers NVAX,CTMX,AAPL,MSFT,TSLA
+python main.py --adapters yfinance                --strategies peter_lynch,psales_rev                --tickers NFLX,NVAX,AAPL,MSFT,TSLA
 ```
 
 Flags you can use:
@@ -222,7 +296,7 @@ Flags you can use:
 Loop forever, refreshing `out/results.json` every _N_ seconds:
 
 ```bash
-python main.py --adapters yfinance                --strategies peter_lynch,psales_rev                --tickers NVAX,CTMX,AAPL,MSFT,TSLA                --continuous                --interval 60
+python main.py --adapters yfinance                --strategies peter_lynch,psales_rev                --tickers NFLX,NVAX,AAPL,MSFT,TSLA                --continuous                --interval 60
 ```
 
 ### HTTP API
@@ -269,17 +343,18 @@ You can choose **exactly** which adapters & strategies to run — either in `con
 
 - **Adapter selection** controls **which data sources** are queried and in what **priority order**.
 - **Strategy selection** controls **which valuation models** run.
+- **Dynamic weighting** automatically balances strategies based on company fundamentals.
 
 Examples:
 
 ```bash
-# Only yfinance (no vendor keys), both strategies
-python main.py --adapters yfinance --strategies peter_lynch,psales_rev --tickers NVAX,CTMX,AAPL
+# Only yfinance (no vendor keys), both strategies with dynamic weighting
+python main.py --adapters yfinance --strategies peter_lynch,psales_rev --tickers NFLX,NVAX,AAPL
 
 # Use IBKR for price first (via IBeam), then yfinance as fallback
 python main.py --adapters ibkr,yfinance --strategies peter_lynch --tickers AAPL,MSFT
 
-# Peter Lynch only, stricter MoS
+# Peter Lynch only (no weighting since only one strategy)
 python main.py --adapters yfinance --strategies peter_lynch --min-mos 0.3 --tickers NVAX,CTMX
 ```
 
@@ -295,24 +370,29 @@ python main.py --adapters yfinance --strategies peter_lynch --min-mos 0.3 --tick
   "min_mos": 0.2,
   "tickers": [
     {
-      "ticker": "NVAX",
-      "price": 9.58,
-      "best_fair_value": 111.0,
-      "best_mos": 0.9137,
+      "ticker": "NFLX",
+      "price": 485.09,
+      "best_fair_value": 1247.50,
+      "best_mos": 0.611,
       "best_strategy": "peter_lynch",
-      "undervalued": true
+      "undervalued": true,
+      "weights": {
+        "peter_lynch": 0.6,
+        "psales_rev": 0.4
+      }
     }
     // ...
   ],
   "per_strategy": {
-    "peter_lynch": { "NVAX": { "fv": 111.0, "mos": 0.9137 } },
-    "psales_rev": { "AAPL": { "fv": 228.23, "mos": -0.015 } }
+    "peter_lynch": { "NFLX": { "fv": 1247.50, "mos": 0.611 } },
+    "psales_rev": { "NFLX": { "fv": 3120.25, "mos": 0.845 } }
   }
 }
 ```
 
 Notes:
-- `best_*` is the best (most conservative MoS) across the selected strategies.
+- `best_*` is the **weighted average** across the selected strategies.
+- `weights` shows the dynamic weighting applied (NEW).
 - `per_strategy` is optional (enabled via `outputs.include_per_strategy`).
 
 ---
@@ -337,7 +417,7 @@ command: >
   python main.py
   --adapters yfinance
   --strategies peter_lynch,psales_rev
-  --tickers NVAX,CTMX,AAPL,MSFT,TSLA
+  --tickers NFLX,NVAX,AAPL,MSFT,TSLA
   --continuous
   --interval 120
 ```
@@ -453,6 +533,14 @@ python -m pytest -q
 
 The merge policy is **first non-None wins** per field according to adapter order you pass on the CLI (or list in `settings.yaml`).
 
+### Extending Dynamic Weighting
+
+To add a new strategy to the weighting system:
+
+1. Update `Pipeline/weighting.py` to include your strategy in the weight calculation
+2. Modify the `apply_weighted_valuation` function to handle your strategy
+3. Update the configuration schema in `core/config.py` and `config/settings.yaml`
+
 ---
 
 ## Troubleshooting
@@ -466,7 +554,7 @@ The merge policy is **first non-None wins** per field according to adapter order
 - **No `out/results.json`:**  
   Make sure `outputs` exists on `Settings` and `outputs.json_path` points to `out/results.json`. Create the folder: `mkdir -p out`.
 
-- **Dashboard shows “missing results”:**  
+- **Dashboard shows "missing results":**  
   Run the writer once (or in continuous mode) so the JSON exists. The API & dashboard read `AMPYFIN_RESULTS_PATH` or default `out/results.json`.
 
 - **IBKR/IBeam TLS errors:**  
@@ -474,6 +562,9 @@ The merge policy is **first non-None wins** per field according to adapter order
 
 - **Compose tried to pull an image:**  
   Our `docker-compose.yml` builds locally for both services and uses the same image (`ampyfin/val:dev`).
+
+- **Weights showing as 0.5/0.5 for all stocks:**  
+  Check that your adapters are providing `net_margin` data. The system falls back to default weights when margin data is unavailable.
 
 ---
 
@@ -484,6 +575,8 @@ The merge policy is **first non-None wins** per field according to adapter order
 - Alerts (email/webhook) on MoS crossovers
 - Historical snapshots in SQLite/Parquet for trend analysis
 - CI/CD (lint, type-check, tests, image build)
+- **Enhanced weighting:** Sector-specific weights, market cap considerations
+- **Backtesting:** Historical performance of dynamic weighting vs static strategies
 
 ---
 
@@ -511,6 +604,6 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 **Happy building!** 🚀
 
-If you have tweaks you want (new strategies, a different data source, or a custom table in the dashboard), the registry pattern makes it easy—drop in a file, register it, and select it on the CLI.
+If you have tweaks you want (new strategies, a different data source, custom weighting logic, or a custom table in the dashboard), the registry pattern makes it easy—drop in a file, register it, and select it on the CLI.
 
 
