@@ -127,7 +127,7 @@ cp .env.example .env
 python main.py --adapters yfinance                --strategies peter_lynch,psales_rev                --tickers NVAX,CTMX,AAPL,MSFT,TSLA
 
 # 4) Start the API (in a second terminal)
-uvicorn server.api:app --host 127.0.0.1 --port 8000
+python -m uvicorn server.api:app --host 127.0.0.1 --port 8000
 
 # 5) Open the dashboard
 # http://127.0.0.1:8000/

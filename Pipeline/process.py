@@ -66,28 +66,49 @@ def run(ctx):
 
         logger.info(f"[process] {sname}: done for {len(ctx.valuations[sname])} tickers")
 
-    # Build per-ticker summary (select best by highest MoS)
+    # Build per-ticker summary (select median fair value)
     min_mos = float(ctx.config.thresholds.get("min_mos", 0.20))
     for t in ctx.tickers:
         price = ctx.derived.get(t, {}).get("price")
-        best = {"strategy": None, "fv": None, "mos": None}
-
+        
+        # Collect all valid fair values and their corresponding MoS
+        valid_fvs = []
         for sname, per_ticker in ctx.results["per_strategy"].items():
             entry = per_ticker.get(t)
             if not entry:
                 continue
+            fv = entry.get("fv")
             mos = entry.get("mos")
-            if mos is None:
-                continue
-            if best["mos"] is None or mos > best["mos"]:
-                best = {"strategy": sname, "fv": entry.get("fv"), "mos": mos}
+            if fv is not None and mos is not None:
+                valid_fvs.append({"strategy": sname, "fv": fv, "mos": mos})
+        
+        # Calculate median fair value
+        if valid_fvs:
+            # Sort by fair value to find median
+            valid_fvs.sort(key=lambda x: x["fv"])
+            median_idx = len(valid_fvs) // 2
+            if len(valid_fvs) % 2 == 0:
+                # Even number of values - take average of two middle values
+                median_fv = (valid_fvs[median_idx - 1]["fv"] + valid_fvs[median_idx]["fv"]) / 2
+                # Use the strategy with the closest fair value to median
+                median_strategy = valid_fvs[median_idx - 1]["strategy"]
+                median_mos = valid_fvs[median_idx - 1]["mos"]
+            else:
+                # Odd number of values - take middle value
+                median_fv = valid_fvs[median_idx]["fv"]
+                median_strategy = valid_fvs[median_idx]["strategy"]
+                median_mos = valid_fvs[median_idx]["mos"]
+        else:
+            median_fv = None
+            median_strategy = None
+            median_mos = None
 
         ctx.results["summary"][t] = {
             "price": price,
-            "best_strategy": best["strategy"],
-            "best_fv": best["fv"],
-            "best_mos": best["mos"],
-            "undervalued": (best["mos"] is not None and best["mos"] >= min_mos)
+            "best_strategy": median_strategy,
+            "best_fv": median_fv,
+            "best_mos": median_mos,
+            "undervalued": (median_mos is not None and median_mos >= min_mos)
         }
 
     logger.info(f"[process] summary completed for {len(ctx.results['summary'])} tickers")
