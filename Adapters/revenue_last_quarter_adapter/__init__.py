@@ -1,0 +1,1 @@
+# adapters/revenue_last_quarter_adapter/__init__.py 

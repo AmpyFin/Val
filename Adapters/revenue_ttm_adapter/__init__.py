@@ -1,0 +1,1 @@
+# adapters/revenue_ttm_adapter/__init__.py 

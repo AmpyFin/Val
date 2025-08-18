@@ -1,0 +1,1 @@
+# adapters/shares_outstanding_adapter/__init__.py 

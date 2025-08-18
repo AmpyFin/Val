@@ -1,609 +1,347 @@
 # AmpyFin — Val Model
 
-_A lightweight, open-source valuation pipeline that compares **current price** to **strategy-defined fair value** and surfaces opportunities with a configurable **Margin of Safety (MoS)**. Now featuring **dynamic strategy weighting** based on company characteristics._
-
-> ⚠️ **Disclaimer:** This is developer tooling for research/education. It is **not** investment advice. Always do your own due diligence.
+A developer-friendly **valuation engine** that compares **current prices** with **strategy-derived fair values** using pluggable **adapters** and **strategies**, orchestrated by a simple, testable **pipeline**. The system is modular by design so you can swap data sources, add metrics, and plug in new valuation formulas with minimal friction.
 
 ---
 
-## Table of Contents
+## Why this exists (design goals)
 
-- [What is the Val Model?](#what-is-the-val-model)
-- [Core Features](#core-features)
-- [Dynamic Strategy Weighting](#dynamic-strategy-weighting)
-- [Repository Structure](#repository-structure)
-- [Quick Start (Local)](#quick-start-local)
-- [Configuration](#configuration)
-  - [settings.yaml](#settingsyaml)
-  - [.env & Secrets](#env--secrets)
-- [Running Modes](#running-modes)
-  - [Console Mode](#console-mode)
-  - [Continuous Writer](#continuous-writer)
-  - [HTTP API](#http-api)
-  - [Web Dashboard](#web-dashboard)
-- [Choosing Adapters & Strategies](#choosing-adapters--strategies)
-- [Results JSON Schema](#results-json-schema)
-- [Docker & Compose](#docker--compose)
-- [Optional: IBKR via IBeam](#optional-ibkr-via-ibeam)
-- [Testing](#testing)
-- [Extending the System](#extending-the-system)
-  - [Add a New Strategy](#add-a-new-strategy)
-  - [Add a New Adapter](#add-a-new-adapter)
-- [Troubleshooting](#troubleshooting)
-- [Roadmap Ideas](#roadmap-ideas)
-- [License](#license)
+- **Modularity first.** Every numeric input is fetched by a **single-purpose adapter** (one metric per adapter file). Strategies consume canonical metric names, not data vendors.
+- **Swapability.** Choose exactly **one active provider per metric** at runtime (e.g., use Finviz for EPS, yfinance for everything else) without touching pipeline code.
+- **Extensibility.** Add a new metric or strategy in minutes (documented below).
+- **Deterministic stages.** The pipeline separates **Fetch → Process → Result** with a shared `PipelineContext`.
+- **Real-time outputs.** No JSON files. Results go to **console**, optional **UDP broadcast**, and a **live PyQt5 GUI** that refreshes on a timer.
+- **Robust consensus.** By default we use **median** across enabled strategies to reduce outlier impact. (Configurable in code if you later want mean/trimmed/weighted.)
 
 ---
 
-## What is the Val Model?
-
-The Val Model fetches market & fundamental data, computes **fair values** using one or more **valuation strategies** (e.g., Peter Lynch PEG, Price/Sales reversion), and compares them to current price to calculate **Margin of Safety (MoS)**. It can:
-
-- print a **Rich** console table with **dynamic strategy weights**,
-- write a machine-readable **JSON** snapshot,
-- expose the snapshot over a **FastAPI** endpoint and a **WebSocket** stream,
-- serve a simple **web dashboard** for browsing/filtering results.
-
-The whole pipeline is designed to be **adapter-driven** and **strategy-driven**, so developers can swap data sources and valuation models at runtime.
-
-**NEW: Dynamic Strategy Weighting** - The system now automatically balances Peter Lynch vs P/S Reversion strategies based on company characteristics like net margin, growth rate, and earnings quality.
-
----
-
-## Core Features
-
-- **Pipeline stages:** `Fetch` (multithreaded) → `Process` (multithreaded) → `Result` (console + JSON export)
-- **Adapters:** `yfinance` (no vendor keys), `alpaca`, `polygon`, `fmp` (Financial Modeling Prep), `ibkr` (IBeam gateway), `mock_local`
-- **Strategies:** `peter_lynch`, `psales_rev`
-- **Dynamic Weighting:** Automatic strategy balancing based on company fundamentals
-- **Config-first, CLI override:** set defaults in `config/settings.yaml`, override with CLI flags
-- **Live outputs:** `out/results.json` + `/results` API + `/stream` WebSocket
-- **Dashboard:** built-in HTML/JS UI at `/` (served by FastAPI)
-- **Continuous mode:** run the pipeline on an interval to refresh results automatically
-- **Tests:** fast, network-free unit tests with `pytest`
-- **Dockerized:** run writer + API/dashboard together with `docker compose`
-
----
-
-## Dynamic Strategy Weighting
-
-The Val Model now uses **intelligent weighting** to balance Peter Lynch vs P/S Reversion strategies based on company characteristics:
-
-### Weighting Logic
-
-**Net Margin-Based Weighting:**
-- **Low margin (< 5%):** 80% P/S Reversion, 20% Peter Lynch
-- **High margin (> 10%):** 80% Peter Lynch, 20% P/S Reversion  
-- **Medium margin (5-10%):** 60% Peter Lynch, 40% P/S Reversion
-
-**Growth Rate Adjustments:**
-- **Negative growth:** Reduce Peter Lynch weight by 30%
-- **High growth (> 15%):** Increase Peter Lynch weight by 20%
-
-**Earnings Quality:**
-- **Negative EPS:** 90% P/S Reversion, 10% Peter Lynch
-
-### Why This Matters
-
-**Netflix Example:**
-- **P/S Reversion:** $3000+ (overestimates due to historical bubble P/S ratios)
-- **Peter Lynch:** ~$1000 (more conservative, based on earnings growth)
-- **Dynamic Weight:** ~$1500 (balanced approach considering Netflix's mature growth phase)
-
-**Early-Stage Companies:**
-- **NVAX/CTMX:** Heavily weighted toward P/S Reversion (low margins, negative earnings)
-- **Established Tech:** Balanced toward Peter Lynch (high margins, stable earnings)
-
-### Configuration
-
-Adjust weighting behavior in `config/settings.yaml`:
-
-```yaml
-weighting:
-  low_margin_threshold: 0.05    # < 5% net margin: favor P/S reversion
-  high_margin_threshold: 0.10   # > 10% net margin: favor Peter Lynch
-  negative_growth_penalty: 0.3  # Reduce Peter Lynch weight by 30% for negative growth
-  high_growth_boost: 0.2        # Increase Peter Lynch weight by 20% for >15% growth
-  default_peter_lynch_weight: 0.5
-  default_psales_weight: 0.5
-```
-
----
-
-## Repository Structure
-
-```
-.
-├── Adapters/
-│   ├── base.py
-│   ├── yfinance.py
-│   ├── alpaca.py
-│   ├── polygon.py
-│   ├── fmp.py
-│   ├── ibkr_webapi.py
-│   └── mock_local.py
-├── Strategies/
-│   ├── base.py
-│   ├── peter_lynch.py
-│   └── psales_reversion.py
-├── Pipeline/
-│   ├── context.py
-│   ├── fetch.py
-│   ├── process.py
-│   ├── weighting.py          # NEW: Dynamic strategy weighting
-│   └── result.py
-├── Registries/
-│   ├── adapters.py
-│   └── strategies.py
-├── server/
-│   ├── __init__.py
-│   ├── api.py               # FastAPI app: /, /health, /results, /stream
-│   └── web/
-│       └── index.html       # Lightweight dashboard
-├── config/
-│   ├── settings.yaml
-│   └── settings.example.yaml
-├── core/
-│   ├── config.py
-│   └── logging.py
-├── out/
-│   └── .gitkeep
-├── tests/
-│   ├── test_api.py
-│   ├── test_result_export.py
-│   └── test_strategies.py
-├── main.py                  # Typer CLI entrypoint
-├── requirements.txt
-├── docker-compose.yml
-├── Dockerfile
-├── .env.example
-└── .gitignore
-```
-
----
-
-## Quick Start (Local)
-
-Prereqs: Python **3.11+**, `pip`.
+## Quick start
 
 ```bash
-# 1) Install deps
-python -m pip install -r requirements.txt
-
-# 2) (Optional) copy env template if you plan to use paid APIs
-cp .env.example .env
-
-# 3) Run once in console mode with dynamic weighting (no vendor keys needed)
-python main.py --adapters yfinance                --strategies peter_lynch,psales_rev                --tickers NFLX,NVAX,AAPL,MSFT,TSLA
-
-# 4) Start the API (in a second terminal)
-python -m uvicorn server.api:app --host 127.0.0.1 --port 8000
-
-# 5) Open the dashboard
-# http://127.0.0.1:8000/
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -U pip wheel
+pip install yfinance requests pandas pytest python-dotenv PyQt5
 ```
 
-**Console Output Now Shows:**
-```
-┌─────────┬─────────┬──────────────┬─────────┬──────────┬──────────┐
-│ Ticker  │ Price   │ Fair Value   │ MoS     │ Strategy │ Weights  │
-├─────────┼─────────┼──────────────┼─────────┼──────────┼──────────┤
-│ NFLX    │ $485.09 │ $1,247.50    │ 61.1%   │ peter_lynch │ PL:0.6 PS:0.4 │
-│ NVAX    │ $9.58   │ $45.20       │ 78.8%   │ psales_rev  │ PL:0.2 PS:0.8 │
-└─────────┴─────────┴──────────────┴─────────┴──────────┴──────────┘
-```
-
----
-
-## Configuration
-
-### `settings.yaml`
-
-Defaults live in `config/settings.yaml`. You can override any of them via CLI at runtime.
-
-```yaml
-mode: console                 # console|gui|broadcast (informational; CLI selects behavior)
-run: once                     # once|continuous
-
-adapters:                     # order = priority per field (first non-None wins)
-  - yfinance
-  - alpaca
-  - polygon
-  - fmp
-  - mock_local
-
-strategies:
-  - peter_lynch
-  - psales_rev
-
-tickers: ["AAPL","MSFT","NVDA"]   # default list (override with --tickers or --tickers-file)
-
-thresholds:
-  min_mos: 0.20               # 20% Margin of Safety threshold used in summaries/filters
-
-caps:                         # used by some strategies (e.g., Peter Lynch growth PE clamps)
-  max_growth_pe: 50
-  min_growth_pe: 5
-
-# NEW: Dynamic weighting configuration
-weighting:
-  # Net margin thresholds for strategy weighting
-  low_margin_threshold: 0.05    # < 5% net margin: favor P/S reversion
-  high_margin_threshold: 0.10   # > 10% net margin: favor Peter Lynch
-  
-  # Growth rate thresholds
-  negative_growth_penalty: 0.3  # Reduce Peter Lynch weight by 30% for negative growth
-  high_growth_boost: 0.2        # Increase Peter Lynch weight by 20% for >15% growth
-  
-  # Default weights when insufficient data
-  default_peter_lynch_weight: 0.5
-  default_psales_weight: 0.5
-
-schedule:
-  interval_sec: 60            # used by continuous mode if --interval not provided
-
-logging:
-  level: INFO
-
-outputs:
-  json_path: "out/results.json"
-  include_per_strategy: true
-```
-
-> **Important:** The **order** of `adapters` matters. For each field (e.g., price, eps), the first adapter that returns a non-`None` value is used.
-
-### `.env` & Secrets
-
-Use `.env` for provider credentials (already in `.gitignore`). See `.env.example`:
-
+Optional `.env` (for alternative adapters you may enable later):
 ```
 POLYGON_API_KEY=
 FINANCIAL_PREP_API_KEY=
-ALPACA_API_KEY=
-ALPACA_API_SECRET=
+Alpaca_API_KEY=
+Alpaca_API_SECRET=
+```
 
-# IBKR/IBeam (optional)
-IBKR_USERNAME=
-IBKR_PASSWORD=
-IBEAM_GATEWAY_URL=https://localhost:5000
-IBEAM_INSECURE_TLS=true   # dev only; self-signed cert
+Run once (console + optional broadcast/GUI based on `control.py`):
+```bash
+python main.py
+```
 
-# Where API/dashboard look for results
-AMPYFIN_RESULTS_PATH=out/results.json
+Use the CLI (supports overrides, GUI, continuous mode):
+```bash
+python scripts/cli.py --run-once
+python scripts/cli.py --loop --sleep 120
+python scripts/cli.py --set eps_ttm=yfinance_eps_ttm --run-once
+python scripts/cli.py --tickers-source wiki_spy_500_tickers --run-once
+```
+
+Listen for broadcasts (if enabled in `control.py`):
+```bash
+python scripts/udp_listen.py
+```
+
+Launch GUI continuously from CLI (if `Gui_mode=True`):
+```bash
+python scripts/cli.py --loop --sleep 120
 ```
 
 ---
 
-## Running Modes
+## Control flags (`control.py`)
 
-### Console Mode
+```python
+Run_continous = False     # False: run once, True: run forever
+Gui_mode = False          # True: open live PyQt5 GUI (refresh timer & controls)
+Broadcast_mode = False    # True: send UDP payload of results
 
-One-shot run that prints a Rich table with **dynamic weights** and writes `out/results.json`:
+broadcast_network = "127.0.0.1"
+broadcast_port = 5002
 
-```bash
-python main.py --adapters yfinance                --strategies peter_lynch,psales_rev                --tickers NFLX,NVAX,AAPL,MSFT,TSLA
+# Loop timing
+LOOP_SLEEP_SECONDS = 180
+
+# Normalized mirrors (used internally)
+RUN_CONTINUOUS = bool(Run_continous)
+GUI_MODE = bool(Gui_mode)
+BROADCAST_MODE = bool(Broadcast_mode)
+BROADCAST_NETWORK = broadcast_network
+BROADCAST_PORT = int(broadcast_port)
 ```
 
-Flags you can use:
+---
 
-- `--adapters yfinance,alpaca` — only hit the adapters listed (no accidental API calls)
-- `--strategies peter_lynch` — compute only chosen strategies
-- `--min-mos 0.25` — use a 25% MoS threshold for the summary table
-- `--tickers-file path/to/tickers.txt` — newline or comma-separated tickers
+## Architecture
 
-### Continuous Writer
-
-Loop forever, refreshing `out/results.json` every _N_ seconds:
-
-```bash
-python main.py --adapters yfinance                --strategies peter_lynch,psales_rev                --tickers NFLX,NVAX,AAPL,MSFT,TSLA                --continuous                --interval 60
+```
+adapters/
+  adapter.py                        # interfaces + common exceptions
+  yf_session.py                     # rotating Session/User-Agents for yfinance
+  current_price_adapter/
+  eps_adapter/
+  revenue_last_quarter_adapter/
+  growth_adapter/
+  shares_outstanding_adapter/
+  revenue_ttm_adapter/
+  ebit_ttm_adapter/
+  gross_profit_ttm_adapter/
+  fcf_ttm_adapter/
+  net_debt_adapter/
+  book_value_per_share_adapter/     # (for Residual Income, BVPS)
+  tickers_adapter/                  # static list + Wikipedia scrapers
+strategies/
+  strategy.py                       # Strategy interface
+  peter_lynch.py
+  psales_reversion.py
+  ev_ebit_bridge.py
+  fcf_yield.py
+  gp_multiple_reversion.py
+  dcf_gordon.py                     # DCF with terminal growth (negative-policy knob)
+  epv_ebit.py                       # Earnings Power Value (no-growth perpetuity)
+  residual_income.py                # RI per-share model
+registries/
+  adapter_registry.py               # **Single source of truth** for active providers
+  strategy_registry.py              # enables strategies + declares required metrics + defaults
+  pipeline_registry.py              # reads adapter/strategy selections; applies optional overrides
+pipeline/
+  context.py                        # PipelineContext container
+  stages/
+    fetch_stage.py                  # fetches metrics per ticker via active adapters
+    process_stage.py                # executes each strategy with required inputs
+    result_stage.py                 # median consensus; console + broadcast + GUI
+  runner.py                         # run_once / run_forever orchestrator
+ui/
+  viewer.py                         # live PyQt5 table: sorting, colors, pause/resume, interval
+scripts/
+  cli.py                            # runtime overrides + run once/loop + GUI routing
+  udp_listen.py                     # debug helper for UDP broadcasts
+tests/
+  ...                               # smoke tests (can run offline by setting AMPYFIN_TEST_OFFLINE=1)
+control.py
+main.py
+README.md
 ```
 
-### HTTP API
+### Data flow
+1. **Fetch Stage**: uses `registries.adapter_registry` to instantiate the active adapter **for each metric** and calls `fetch(ticker)` → populates `ctx.metrics_by_ticker[ticker][metric]`.
+2. **Process Stage**: looks up enabled strategies in `strategy_registry`, ensures required metrics are present, then calls `strategy.run(params)`; results go to `ctx.fair_values[ticker][strategy_name]`.
+3. **Result Stage**: computes **median** across per-ticker strategy fair values (`consensus_fair_value`). Prints a table, optionally broadcasts UDP, and/or opens/refreshes the GUI.
 
-Start the API:
+---
 
-```bash
-uvicorn server.api:app --host 127.0.0.1 --port 8000
+## Adapters
+
+### Interface
+Every metric adapter implements:
+```python
+class MetricAdapter(Protocol):
+    def get_name(self) -> str: ...
+    def fetch(self, ticker: str) -> float: ...
+```
+Raise `DataNotAvailable` if a value cannot be fetched (the pipeline will record it and continue). We also use a small `retry_on_failure` decorator for resiliency.
+
+### Naming & structure
+- One folder per metric (e.g., `eps_adapter/`, `fcf_ttm_adapter/`).
+- One file per **single-purpose** adapter: `yfinance_eps_ttm_adapter.py`, `finviz_eps_ttm_adapter.py`, etc.
+- Tickers sources are adapters, too (`tickers_adapter/`), including a static list and Wikipedia scrapers.
+
+### Provider selection (single source of truth)
+`registries/adapter_registry.py` imports **all adapters** and exposes:
+- `_METRIC_PROVIDER_FACTORIES` — vendor factories per metric
+- `_ACTIVE_METRIC_PROVIDER` — **exactly one** chosen provider per metric
+- `_ACTIVE_TICKERS_SOURCE` — chosen tickers source
+
+Public helpers:
+```python
+set_active_metric_provider("eps_ttm", "finviz_eps_ttm")
+get_active_metric_adapter("eps_ttm")
+
+set_active_tickers_source("wiki_spy_500_tickers")
+get_active_tickers_adapter()
 ```
 
-Endpoints:
+**Runtime overrides** (no file edits): `scripts/cli.py` accepts `--set METRIC=PROVIDER` and `--tickers-source …` which are applied by `pipeline_registry.apply_pipeline_registry()`.
 
-- `GET /health` → `{ status, time, results_path }`
-- `GET /results`  
-  Query params:
-  - `undervalued_only=true|false`
-  - `min_mos=0.25` (override MoS threshold)
-  
-  Examples:
+### Rate-limit hardening (yfinance)
+`adapters/yf_session.py` maintains a small pool of rotating `requests.Session` objects and common desktop user-agents, used by all yfinance adapters to reduce friction.
+
+---
+
+## Strategies
+
+### Interface
+```python
+class Strategy(Protocol):
+    def get_name(self) -> str: ...
+    def run(self, params: Dict[str, Any]) -> float: ...
+```
+- Inputs are supplied via `params` using **canonical metric keys** (e.g., `eps_ttm`, `revenue_ttm`, `net_debt`).
+- If inputs are missing/invalid and the strategy cannot proceed, raise `StrategyInputError`; the pipeline records the error and the strategy’s value becomes `None` for that ticker.
+
+### Included strategies (enabled by default)
+- **Peter Lynch** (`peter_lynch.py`)
+- **P/S Reversion** (`psales_reversion.py`)
+- **EV/EBIT Bridge** (`ev_ebit_bridge.py`)
+- **FCF Yield** (`fcf_yield.py`)
+- **Gross Profit multiple reversion** (`gp_multiple_reversion.py`)
+- **DCF (Gordon)** (`dcf_gordon.py`) — has `dcf_negative_equity_handling: exclude|zero|allow` (default: `exclude` → robust)
+- **EPV (EBIT)** (`epv_ebit.py`)
+- **Residual Income** (`residual_income.py`) — requires **BVPS** via `book_value_per_share`
+
+You enable/disable strategies and define their **required metrics** and **default hyperparameters** in `registries/strategy_registry.py`.
+
+### Consensus method
+The result stage uses **median** across available strategies for a ticker (ignores `None`s). Median is robust to outliers and noisy inputs. If you prefer mean/trimmed/weighted, you can refactor in `pipeline/consensus.py` later.
+
+---
+
+## How to add a **new ADAPTER** (step-by-step)
+
+1. **Create a subfolder** under `adapters/<metric>_adapter/` if it doesn’t exist (e.g., `adapters/pe_ratio_adapter/`) and add `__init__.py`.
+2. **Implement a single-purpose class**:
+   ```python
+   # adapters/pe_ratio_adapter/yfinance_pe_ratio_adapter.py
+   from adapters.adapter import MetricAdapter, DataNotAvailable, retry_on_failure
+   import yfinance as yf
+   from adapters.yf_session import make_session
+
+   class YFinancePERatioAdapter(MetricAdapter):
+       def __init__(self): self._name = "yfinance_pe_ratio"
+       def get_name(self): return self._name
+
+       @retry_on_failure(max_retries=2, delay=0.5)
+       def fetch(self, ticker: str) -> float:
+           t = yf.Ticker(ticker.upper(), session=make_session())
+           val = t.info.get("trailingPE")
+           if val is None:
+               raise DataNotAvailable(f"{self._name}: P/E not available")
+           return float(val)
+   ```
+3. **Register it** in `registries/adapter_registry.py`:
+   ```python
+   from adapters.pe_ratio_adapter.yfinance_pe_ratio_adapter import YFinancePERatioAdapter
+
+   _METRIC_PROVIDER_FACTORIES["pe_ratio"] = {
+       "yfinance_pe_ratio": lambda: YFinancePERatioAdapter(),
+   }
+   _ACTIVE_METRIC_PROVIDER["pe_ratio"] = "yfinance_pe_ratio"
+   ```
+4. **Use it in a strategy** by adding `"pe_ratio"` to that strategy’s required metrics (if needed).
+
+**Tip:** follow the naming convention `vendor_metric_adapter.py` and keep the class’ `get_name()` aligned with the provider string used in the registry.
+
+---
+
+## How to add a **new STRATEGY** (step-by-step)
+
+1. **Create the file** in `strategies/` (e.g., `strategies/my_value_model.py`):
+   ```python
+   from strategies.strategy import Strategy, StrategyInputError
+
+   class MyValueModel(Strategy):
+       def __init__(self): self._name = "my_value_model"
+       def get_name(self): return self._name
+
+       def run(self, params):
+           # read inputs e.g., price = params.get("current_price")
+           # validate & compute fair value per share
+           # raise StrategyInputError on missing/invalid input
+           return float(42.0)
+   ```
+2. **Register it** in `registries/strategy_registry.py`:
+   ```python
+   from strategies.my_value_model import MyValueModel
+
+   _STRATEGY_FACTORIES["my_value_model"] = lambda: MyValueModel()
+   _REQUIRED_METRICS["my_value_model"] = ["current_price"]  # example
+   _DEFAULT_HYPERPARAMS["my_value_model"] = {"alpha": 0.5}  # example
+   _ENABLED_STRATEGIES.append("my_value_model")
+   ```
+3. **Run** the pipeline:
+   ```bash
+   python scripts/cli.py --run-once
+   ```
+
+**Contract:** return a **fair value per share (USD)**. If a strategy doesn’t apply (e.g., negative equity in DCF with strict policy), raise `StrategyInputError` so the consensus ignores it.
+
+---
+
+## GUI (PyQt5)
+
+- **Live table** with sorting, color-coded Discount %, **Refresh now**, **Pause/Resume**, and **Interval** controls.
+- To use, set `Gui_mode = True` in `control.py`, then:
   ```bash
-  curl http://127.0.0.1:8000/results
-  curl "http://127.0.0.1:8000/results?undervalued_only=true&min_mos=0.25"
+  python scripts/cli.py --loop --sleep 120     # live, periodic refresh
+  # or
+  python scripts/cli.py --run-once             # one-off window
+  ```
+- Discount coloring:
+  - ≥ **+20%** undervalued → strong green
+  - **0–20%** undervalued → soft green
+  - **< 0%** (overvalued) → soft red
+
+---
+
+## Broadcasting (UDP)
+
+- Enable in `control.py`: `Broadcast_mode = True`.
+- A compact JSON-like payload of the entire run is sent to `broadcast_network:broadcast_port` (default `127.0.0.1:5002`).
+- View with:
+  ```bash
+  python scripts/udp_listen.py
   ```
 
-- `WS /stream` (WebSocket) → pushes full JSON payload whenever `out/results.json` changes
+---
 
-### Web Dashboard
+## Tests
 
-A zero-dependency dashboard is served at the API root:
-
-```
-http://127.0.0.1:8000/
-```
-
-- Filters: MoS threshold, undervalued-only, sort/limit
-- Live updates via `/stream`
-- Download current view as CSV
+- Run all tests:
+  ```bash
+  pytest -q
+  ```
+- To **skip network** calls:
+  ```bash
+  AMPYFIN_TEST_OFFLINE=1 pytest -q
+  ```
+- What’s covered:
+  - Registry selection (active providers & tickers source)
+  - Adapter smoke tests (numeric checks)
+  - Pipeline smoke (end-to-end structure)
+- Add your own unit tests for new adapters/strategies (recommend minimum “smoke” tests plus a couple of edge cases).
 
 ---
 
-## Choosing Adapters & Strategies
+## Conventions & tips
 
-You can choose **exactly** which adapters & strategies to run — either in `config/settings.yaml` or via CLI.
-
-- **Adapter selection** controls **which data sources** are queried and in what **priority order**.
-- **Strategy selection** controls **which valuation models** run.
-- **Dynamic weighting** automatically balances strategies based on company fundamentals.
-
-Examples:
-
-```bash
-# Only yfinance (no vendor keys), both strategies with dynamic weighting
-python main.py --adapters yfinance --strategies peter_lynch,psales_rev --tickers NFLX,NVAX,AAPL
-
-# Use IBKR for price first (via IBeam), then yfinance as fallback
-python main.py --adapters ibkr,yfinance --strategies peter_lynch --tickers AAPL,MSFT
-
-# Peter Lynch only (no weighting since only one strategy)
-python main.py --adapters yfinance --strategies peter_lynch --min-mos 0.3 --tickers NVAX,CTMX
-```
+- **Error handling:** raise `DataNotAvailable` (adapters) or `StrategyInputError` (strategies) for missing/invalid inputs; the pipeline will record and keep running.
+- **Single-purpose adapters:** one metric per file keeps composition simple and avoids vendor coupling.
+- **Naming:** `yfinance_*`, `fmp_*`, `finviz_*`, `polygon_*` for clarity.
+- **Median consensus:** robust default for combining strategies; avoids over-weighting any single noisy model.
+- **No JSON files:** output goes to console, optional UDP broadcast, and GUI.
+- **YFinance hardening:** all yfinance adapters use a rotating `Session` with common desktop UAs to reduce rate-limit friction.
 
 ---
 
-## Results JSON Schema
+## Roadmap ideas
 
-`out/results.json` (path configurable) is the contract for the API and dashboard.
-
-```jsonc
-{
-  "generated_at": "2025-08-15T23:48:36.776177+00:00",
-  "min_mos": 0.2,
-  "tickers": [
-    {
-      "ticker": "NFLX",
-      "price": 485.09,
-      "best_fair_value": 1247.50,
-      "best_mos": 0.611,
-      "best_strategy": "peter_lynch",
-      "undervalued": true,
-      "weights": {
-        "peter_lynch": 0.6,
-        "psales_rev": 0.4
-      }
-    }
-    // ...
-  ],
-  "per_strategy": {
-    "peter_lynch": { "NFLX": { "fv": 1247.50, "mos": 0.611 } },
-    "psales_rev": { "NFLX": { "fv": 3120.25, "mos": 0.845 } }
-  }
-}
-```
-
-Notes:
-- `best_*` is the **weighted average** across the selected strategies.
-- `weights` shows the dynamic weighting applied (NEW).
-- `per_strategy` is optional (enabled via `outputs.include_per_strategy`).
+- Historical backtests to produce **per-strategy weights** (enabling a data-driven weighted consensus).
+- More adapters (Polygon/Alpaca/FMP) and sector-specific strategies (e.g., banks/insurers).
+- CLI overrides for strategy hyperparameters (per strategy) on demand.
+- Persistence layer (SQLite/Parquet) behind a feature flag, if desired later.
 
 ---
 
-## Docker & Compose
+## License & credit
 
-Single image runs the API by default; the writer runs as a second service.
-
-```bash
-docker compose up --build
-# API: http://127.0.0.1:8000/
-```
-
-`docker-compose.yml` ships with:
-- `api` (FastAPI server + dashboard)
-- `writer` (continuous pipeline)  
-Both share the `./out` volume for `results.json`.
-
-Customize writer command in `docker-compose.yml`:
-```yaml
-command: >
-  python main.py
-  --adapters yfinance
-  --strategies peter_lynch,psales_rev
-  --tickers NFLX,NVAX,AAPL,MSFT,TSLA
-  --continuous
-  --interval 120
-```
-
----
-
-## Optional: IBKR via IBeam
-
-If you want **Interactive Brokers** prices:
-
-1. Create `.env.ibeam` (do **not** commit):
-   ```
-   IBKR_USERNAME=your_username
-   IBKR_PASSWORD=your_password
-   IBEAM_ACCOUNT=U1234567          # or DU1234567 for paper
-   IBEAM_GATEWAY_PORT=5000
-   ```
-
-2. Run IBeam:
-   ```bash
-   docker run --rm -p 127.0.0.1:5000:5000 --env-file .env.ibeam voyz/ibeam:latest
-   # complete login at https://localhost:5000 if required (self-signed cert)
-   ```
-
-3. Set env for the Val app (e.g., in `.env`):
-   ```
-   IBEAM_GATEWAY_URL=https://localhost:5000
-   IBEAM_INSECURE_TLS=true  # dev only
-   ```
-
-4. Run with IBKR first in adapter order:
-   ```bash
-   python main.py --adapters ibkr,yfinance --strategies peter_lynch --tickers AAPL,MSFT
-   ```
-
-> If the gateway is not authenticated, the adapter skips gracefully and falls back to later adapters.
-
----
-
-## Testing
-
-Fast, network-free tests:
-
-```bash
-python -m pytest -q
-```
-
-- `tests/test_strategies.py` — math checks for strategies
-- `tests/test_result_export.py` — JSON export contract
-- `tests/test_api.py` — API filtering behavior using a temp results file
-
----
-
-## Extending the System
-
-### Add a New Strategy
-
-1. Create `Strategies/my_strategy.py`:
-   ```python
-   from .base import BaseStrategy
-   from typing import Optional
-
-   class MyStrategy(BaseStrategy):
-     name = "my_strategy"
-
-     def compute(self, ticker: str, data: dict) -> Optional[float]:
-         # data contains merged fields (price, eps_ttm, sales_per_share, etc.)
-         # return a fair value (float) or None to skip
-         eps = data.get("eps_ttm")
-         if not eps:
-             return None
-         fv = eps * 12.34
-         return round(float(fv), 2)
-   ```
-
-2. Register it in `Registries/strategies.py`:
-   ```python
-   from Strategies.my_strategy import MyStrategy
-   STRATEGIES["my_strategy"] = MyStrategy
-   ```
-
-3. Run it:
-   ```bash
-   python main.py --adapters yfinance --strategies my_strategy --tickers AAPL,MSFT
-   ```
-
-### Add a New Adapter
-
-1. Create `Adapters/my_source.py`:
-   ```python
-   from .base import BaseAdapter
-   from typing import Dict, Any
-
-   class MySourceAdapter(BaseAdapter):
-     name = "my_source"
-     fields_provided = ["price","eps_ttm"]  # declare what you can fill
-
-     def fetch_one(self, ticker: str) -> Dict[str, Any]:
-         # return a dict of available fields, missing fields omitted
-         return {"price": 123.45}
-   ```
-
-2. Register in `Registries/adapters.py`:
-   ```python
-   from Adapters.my_source import MySourceAdapter
-   ADAPTERS["my_source"] = MySourceAdapter
-   ```
-
-3. Use it (order matters):
-   ```bash
-   python main.py --adapters my_source,yfinance --strategies peter_lynch --tickers NVAX
-   ```
-
-The merge policy is **first non-None wins** per field according to adapter order you pass on the CLI (or list in `settings.yaml`).
-
-### Extending Dynamic Weighting
-
-To add a new strategy to the weighting system:
-
-1. Update `Pipeline/weighting.py` to include your strategy in the weight calculation
-2. Modify the `apply_weighted_valuation` function to handle your strategy
-3. Update the configuration schema in `core/config.py` and `config/settings.yaml`
-
----
-
-## Troubleshooting
-
-- **Big MoS numbers?**  
-  Likely fundamentals missing → only one strategy returns a fair value. Ensure your selected adapter(s) can provide `eps_ttm` (for Peter Lynch) or `sales_per_share` + `ps_history` (for P/S Reversion). `yfinance` supplies many fields without paid keys.
-
-- **Vendor rate-limits (429) or forbidden (403):**  
-  Prefer `--adapters yfinance` or place `yfinance` first. Paid providers may throttle free tiers.
-
-- **No `out/results.json`:**  
-  Make sure `outputs` exists on `Settings` and `outputs.json_path` points to `out/results.json`. Create the folder: `mkdir -p out`.
-
-- **Dashboard shows "missing results":**  
-  Run the writer once (or in continuous mode) so the JSON exists. The API & dashboard read `AMPYFIN_RESULTS_PATH` or default `out/results.json`.
-
-- **IBKR/IBeam TLS errors:**  
-  For dev on localhost, set `IBEAM_INSECURE_TLS=true`. Avoid this in production; use a trusted cert/endpoint.
-
-- **Compose tried to pull an image:**  
-  Our `docker-compose.yml` builds locally for both services and uses the same image (`ampyfin/val:dev`).
-
-- **Weights showing as 0.5/0.5 for all stocks:**  
-  Check that your adapters are providing `net_margin` data. The system falls back to default weights when margin data is unavailable.
-
----
-
-## Roadmap Ideas
-
-- More strategies: DCF, EV/EBIT, CAPE, sector-based caps
-- Caching & backoff for paid providers
-- Alerts (email/webhook) on MoS crossovers
-- Historical snapshots in SQLite/Parquet for trend analysis
-- CI/CD (lint, type-check, tests, image build)
-- **Enhanced weighting:** Sector-specific weights, market cap considerations
-- **Backtesting:** Historical performance of dynamic weighting vs static strategies
-
----
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-### Development Setup
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Install development dependencies: `pip install -r requirements.txt`
-4. Run tests: `python -m pytest`
-5. Commit your changes: `git commit -m 'Add amazing feature'`
-6. Push to the branch: `git push origin feature/amazing-feature`
-7. Open a Pull Request
-
----
-
-**Happy building!** 🚀
-
-If you have tweaks you want (new strategies, a different data source, custom weighting logic, or a custom table in the dashboard), the registry pattern makes it easy—drop in a file, register it, and select it on the CLI.
-
-
+- Built for the AmpyFin open ecosystem; designed to be extended freely.
+- **This module values**: correctness, clarity, composability.
+- Pull requests welcome.

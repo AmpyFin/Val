@@ -1,0 +1,1 @@
+# adapters/ticker_adapter/__init__.py 

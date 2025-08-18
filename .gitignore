@@ -1,31 +1,67 @@
-# Python
+# ---- AmpyFin Val Model: Python .gitignore ----
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python bytecode / caches
 __pycache__/
 *.py[cod]
-*.egg-info/
-.venv/
-.venv*/
-pip-wheel-metadata/
-dist/
-build/
-*.log
-
-# Env & secrets
-.env
-.env.*
-!.env.example
-
-# Editors / tooling
-.vscode/
-.idea/
-.mypy_cache/
+*$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
+.conda/
+.python-version
+
+# Builds / dists
+build/
+dist/
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+
+# Coverage / reports
 .coverage
+.coverage.*
 htmlcov/
 coverage.xml
+.pyre/
 
-# macOS / OS
-.DS_Store
+# Logs / temp
+*.log
+logs/
+tmp/
+.cache/
 
-# Project outputs (keep folder but ignore files)
-out/*
-!out/.gitkeep
+# Data files you may generate locally
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.jsonl
+*.sqlite
+*.db
+
+# Secrets / config
+.env
+.env.*
+*.key
+*.pem
+
+# Project specific outputs
+*.out
+*.bak
+
+# Node (occasionally used for tooling)
+node_modules/
