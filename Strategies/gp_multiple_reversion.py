@@ -62,5 +62,14 @@ class GPMultipleReversionStrategy(Strategy):
 
         enterprise_value = target_ev_gp * gp_ttm
         equity_value = enterprise_value - net_debt
+        
+        # Economic validity: equity must be positive
+        if equity_value <= 0:
+            raise StrategyInputError(
+                f"{self.get_name()}: equity <= 0 (EV={enterprise_value:.3f}, net_debt={net_debt:.3f})"
+            )
+        
         fair_value = equity_value / shares_out
+        if fair_value <= 0:
+            raise StrategyInputError(f"{self.get_name()}: fair value per share <= 0")
         return float(fair_value)

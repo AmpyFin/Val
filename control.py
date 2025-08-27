@@ -6,8 +6,8 @@ Edit these booleans to change behavior (no CLI required).
 """
 
 # --- Required by spec (original names) ---
-Run_continous = True          # if False: run once; if True: run forever
-Gui_mode = True               # if True: show PyQt5 GUI (best with Run_continous=False)
+Run_continous = False          # if False: run once; if True: run forever
+Gui_mode = False               # if True: show PyQt5 GUI (best with Run_continous=False)
 Broadcast_mode = False         # if True: broadcast JSON over UDP
 
 broadcast_network = "127.0.0.1"
@@ -22,3 +22,14 @@ GUI_MODE = bool(Gui_mode)
 BROADCAST_MODE = bool(Broadcast_mode)
 BROADCAST_NETWORK = broadcast_network
 BROADCAST_PORT = int(broadcast_port)
+
+# --- JSON dump (optional) ---
+Json_dump_enable = True      # True = write a JSON file each run
+json_dump_dir = "out"         # directory for JSON output files (auto-created)
+
+# --- MongoDB storage (optional) ---
+MONGODB_ENABLE = True        # True = store results in MongoDB (clears existing valuations)
+
+# Normalized mirrors
+JSON_DUMP_ENABLE = bool(Json_dump_enable)
+JSON_DUMP_DIR = json_dump_dir

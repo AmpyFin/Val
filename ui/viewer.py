@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Optional, Dict
+import threading
 
 from PyQt5 import QtCore, QtGui, QtWidgets  # type: ignore
 
@@ -54,8 +55,29 @@ class ValResultsWindow(QtWidgets.QWidget):
         self._table.setSortingEnabled(True)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        
+        # Aggressive performance optimizations
+        self._table.setAlternatingRowColors(False)  # Disable alternating colors
+        self._table.setShowGrid(False)  # Disable grid for better performance
+        self._table.setWordWrap(False)  # Disable word wrap
+        self._table.setTextElideMode(QtCore.Qt.ElideRight)  # Elide long text
+        
+        # Optimize scrolling performance
+        self._table.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        self._table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        
+        # Disable expensive features
+        self._table.setDragEnabled(False)
+        self._table.setAcceptDrops(False)
+        self._table.setDropIndicatorShown(False)
+        self._table.setDefaultDropAction(QtCore.Qt.IgnoreAction)
+        
         # Prevent loading cursor on hover
         self._table.setCursor(QtCore.Qt.ArrowCursor)
+        
+        # Set focus policy to prevent focus issues
+        self._table.setFocusPolicy(QtCore.Qt.NoFocus)
+        
         main.addWidget(self._table)
 
         # Connect controls
@@ -65,6 +87,14 @@ class ValResultsWindow(QtWidgets.QWidget):
 
         # Timer (configured by gui_run_continuous)
         self._timer: Optional[QtCore.QTimer] = None
+        
+        # Performance: prevent excessive event processing
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        self.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, False)
+        
+        # Threading for non-blocking updates
+        self._refresh_thread = None
+        self._refresh_lock = threading.Lock()
 
     # -------- helpers --------
     def _fmt(self, v: Optional[float], p: int = 2) -> str:
@@ -90,14 +120,20 @@ class ValResultsWindow(QtWidgets.QWidget):
             item.setForeground(QtGui.QBrush(QtGui.QColor(156, 0, 6)))
 
     def _ensure_headers(self, strategy_headers: list[str]) -> None:
-        base_headers = ["Ticker", "Price", "Consensus FV", "Discount %"]
+        # Keep Discount % in col 3 for consistent coloring
+        base_headers = ["Ticker", "Price", "Consensus FV", "Discount %", "P25 FV", "P75 FV"]
         headers = base_headers + strategy_headers
-        if headers != (["Ticker", "Price", "Consensus FV", "Discount %"] + self._last_strategy_names):
+        if headers != (["Ticker", "Price", "Consensus FV", "Discount %", "P25 FV", "P75 FV"] + self._last_strategy_names):
+            # Aggressive header optimization
+            self._table.setUpdatesEnabled(False)
+            self._table.setVisible(False)
             self._table.clear()
             self._table.setColumnCount(len(headers))
             self._table.setHorizontalHeaderLabels(headers)
             self._table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
             self._table.horizontalHeader().setStretchLastSection(True)
+            self._table.setVisible(True)
+            self._table.setUpdatesEnabled(True)
             self._last_strategy_names = strategy_headers
 
     # -------- public API --------
@@ -109,14 +145,15 @@ class ValResultsWindow(QtWidgets.QWidget):
         strategy_headers = list(ctx.strategy_names)
         self._ensure_headers(strategy_headers)
 
-        # Rows
-        self._table.setSortingEnabled(False)  # avoid jumpiness during bulk update
+        # Aggressive performance optimization: minimize UI updates
+        self._table.setSortingEnabled(False)
+        self._table.setUpdatesEnabled(False)
+        self._table.setVisible(False)  # Hide during update to prevent flickering
+        
+        # Set row count once
         self._table.setRowCount(len(ctx.tickers))
         
-        # Ensure cursor stays normal during updates
-        self.setCursor(QtCore.Qt.ArrowCursor)
-        self._table.setCursor(QtCore.Qt.ArrowCursor)
-
+        # Use more efficient item creation
         for r, tk in enumerate(ctx.tickers):
             bt = ctx.results_by_ticker.get(tk, {})
             discount = bt.get("consensus_discount")
@@ -126,6 +163,8 @@ class ValResultsWindow(QtWidgets.QWidget):
                 self._fmt(bt.get("current_price")),
                 self._fmt(bt.get("consensus_fair_value")),
                 (f"{discount*100:.1f}%" if isinstance(discount, (int, float)) else "-"),
+                self._fmt(bt.get("consensus_p25")),
+                self._fmt(bt.get("consensus_p75")),
             ]
             # strategy values
             for sname in strategy_headers:
@@ -136,14 +175,17 @@ class ValResultsWindow(QtWidgets.QWidget):
                 item = QtWidgets.QTableWidgetItem(str(text))
                 if c == 0:
                     item.setFlags(item.flags() ^ QtCore.Qt.ItemIsEditable)
-                # Color discount column
-                if c == 3:
+                # Color discount column (only if needed)
+                if c == 3 and isinstance(discount, (int, float)):
                     self._colorize_discount_cell(item, discount)
                 # Right-align numbers
                 if c >= 1:
                     item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
                 self._table.setItem(r, c, item)
 
+        # Re-enable everything at once
+        self._table.setVisible(True)
+        self._table.setUpdatesEnabled(True)
         self._table.setSortingEnabled(True)
         self._status.setText("Status: refreshed")
 
@@ -161,22 +203,34 @@ class ValResultsWindow(QtWidgets.QWidget):
         if self._paused:
             self._status.setText("Status: paused")
             return
+            
+        # Prevent multiple simultaneous refreshes
+        if self._refresh_lock.locked():
+            return
+            
         try:
             self._status.setText("Status: updating…")
-            # Set cursor to normal to prevent loading cursor from appearing
-            self.setCursor(QtCore.Qt.ArrowCursor)
+            
+            # Disable UI interactions during update
+            self.setEnabled(False)
             QtWidgets.QApplication.processEvents()
-            ctx = PipelineContext.new_run()
-            run_fetch_stage(ctx)
-            run_process_stage(ctx)
-            # Run result stage without popping its own GUI; still prints & may broadcast.
-            run_result_stage(ctx, show_gui=False)
-            self.update_with_context(ctx)
+            
+            # Run pipeline stages (this is the expensive part)
+            with self._refresh_lock:
+                ctx = PipelineContext.new_run()
+                run_fetch_stage(ctx)
+                run_process_stage(ctx)
+                # Run result stage without popping its own GUI; still prints & may broadcast.
+                run_result_stage(ctx, show_gui=False)
+                
+                # Update UI with results
+                self.update_with_context(ctx)
+            
+            # Re-enable UI
+            self.setEnabled(True)
         except Exception as e:
             self._status.setText(f"Status: error: {e}")
-        finally:
-            # Ensure cursor is reset to normal
-            self.setCursor(QtCore.Qt.ArrowCursor)
+            self.setEnabled(True)
 
     def toggle_pause(self) -> None:
         self._paused = not self._paused

@@ -21,15 +21,16 @@ A developer-friendly **valuation engine** that compares **current prices** with 
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -U pip wheel
-pip install yfinance requests pandas pytest python-dotenv PyQt5
+pip install -r requirements.txt
 ```
 
-Optional `.env` (for alternative adapters you may enable later):
+Optional `.env` (for alternative adapters and MongoDB you may enable later):
 ```
 POLYGON_API_KEY=
 FINANCIAL_PREP_API_KEY=
 Alpaca_API_KEY=
 Alpaca_API_SECRET=
+MONGODB_CONNECTION_STRING=mongodb://localhost:27017/
 ```
 
 Run once (console + optional broadcast/GUI based on `control.py`):
@@ -37,12 +38,15 @@ Run once (console + optional broadcast/GUI based on `control.py`):
 python main.py
 ```
 
-Use the CLI (supports overrides, GUI, continuous mode):
+Use the CLI (supports overrides, GUI, continuous mode, MongoDB):
 ```bash
 python scripts/cli.py --run-once
 python scripts/cli.py --loop --sleep 120
 python scripts/cli.py --set eps_ttm=yfinance_eps_ttm --run-once
 python scripts/cli.py --tickers-source wiki_spy_500_tickers --run-once
+python scripts/cli.py --mongodb --run-once  # Store results in MongoDB
+python scripts/cli.py --mongodb --mongodb-uri "mongodb://your-server:27017/" --run-once
+# Or set MONGODB_CONNECTION_STRING environment variable
 ```
 
 Listen for broadcasts (if enabled in `control.py`):
@@ -53,6 +57,11 @@ python scripts/udp_listen.py
 Launch GUI continuously from CLI (if `Gui_mode=True`):
 ```bash
 python scripts/cli.py --loop --sleep 120
+```
+
+Test MongoDB connection:
+```bash
+python scripts/test_mongodb.py
 ```
 
 ---
@@ -70,12 +79,21 @@ broadcast_port = 5002
 # Loop timing
 LOOP_SLEEP_SECONDS = 180
 
+# JSON dump (optional)
+Json_dump_enable = True   # True = write a JSON file each run
+json_dump_dir = "out"     # directory for JSON output files
+
+# MongoDB storage (optional)
+MONGODB_ENABLE = False    # True = store results in MongoDB (clears existing valuations)
+
 # Normalized mirrors (used internally)
 RUN_CONTINUOUS = bool(Run_continous)
 GUI_MODE = bool(Gui_mode)
 BROADCAST_MODE = bool(Broadcast_mode)
 BROADCAST_NETWORK = broadcast_network
 BROADCAST_PORT = int(broadcast_port)
+JSON_DUMP_ENABLE = bool(Json_dump_enable)
+JSON_DUMP_DIR = json_dump_dir
 ```
 
 ---
@@ -117,13 +135,15 @@ pipeline/
   stages/
     fetch_stage.py                  # fetches metrics per ticker via active adapters
     process_stage.py                # executes each strategy with required inputs
-    result_stage.py                 # median consensus; console + broadcast + GUI
+    result_stage.py                 # median consensus; console + broadcast + GUI + MongoDB
+  mongodb_storage.py              # MongoDB storage for valuation results
   runner.py                         # run_once / run_forever orchestrator
 ui/
   viewer.py                         # live PyQt5 table: sorting, colors, pause/resume, interval
 scripts/
-  cli.py                            # runtime overrides + run once/loop + GUI routing
+  cli.py                            # runtime overrides + run once/loop + GUI routing + MongoDB
   udp_listen.py                     # debug helper for UDP broadcasts
+  test_mongodb.py                   # MongoDB connection test script
 tests/
   ...                               # smoke tests (can run offline by setting AMPYFIN_TEST_OFFLINE=1)
 control.py
@@ -134,7 +154,7 @@ README.md
 ### Data flow
 1. **Fetch Stage**: uses `registries.adapter_registry` to instantiate the active adapter **for each metric** and calls `fetch(ticker)` → populates `ctx.metrics_by_ticker[ticker][metric]`.
 2. **Process Stage**: looks up enabled strategies in `strategy_registry`, ensures required metrics are present, then calls `strategy.run(params)`; results go to `ctx.fair_values[ticker][strategy_name]`.
-3. **Result Stage**: computes **median** across per-ticker strategy fair values (`consensus_fair_value`). Prints a table, optionally broadcasts UDP, and/or opens/refreshes the GUI.
+3. **Result Stage**: computes **median** across per-ticker strategy fair values (`consensus_fair_value`). Prints a table, optionally broadcasts UDP, stores in MongoDB, and/or opens/refreshes the GUI.
 
 ---
 
@@ -169,10 +189,66 @@ set_active_tickers_source("wiki_spy_500_tickers")
 get_active_tickers_adapter()
 ```
 
-**Runtime overrides** (no file edits): `scripts/cli.py` accepts `--set METRIC=PROVIDER` and `--tickers-source …` which are applied by `pipeline_registry.apply_pipeline_registry()`.
+**Runtime overrides** (no file edits): `scripts/cli.py` accepts `--set METRIC=PROVIDER`, `--tickers-source …`, and `--mongodb` which are applied by `pipeline_registry.apply_pipeline_registry()`.
 
 ### Rate-limit hardening (yfinance)
 `adapters/yf_session.py` maintains a small pool of rotating `requests.Session` objects and common desktop user-agents, used by all yfinance adapters to reduce friction.
+
+---
+
+## MongoDB Storage
+
+### Overview
+The system can store valuation results in MongoDB for persistence and analysis. When enabled, it clears existing valuations and stores the complete results from each run.
+
+### Configuration
+- **Environment variable**: `MONGODB_CONNECTION_STRING` (defaults to `mongodb://localhost:27017/`)
+- **Database**: `val_trades`
+- **Collection**: `valuations`
+
+### Usage
+Enable via CLI:
+```bash
+python scripts/cli.py --mongodb --run-once
+python scripts/cli.py --mongodb --mongodb-uri "mongodb://your-server:27017/" --run-once
+# Or set MONGODB_CONNECTION_STRING environment variable
+```
+
+Enable via control.py:
+```python
+MONGODB_ENABLE = True
+```
+
+### Data Structure
+Each valuation run creates a document with:
+```json
+{
+  "run_id": "unique_run_identifier",
+  "generated_at": timestamp,
+  "generated_at_iso": "ISO8601_string",
+  "tickers": ["list", "of", "tickers"],
+  "strategy_names": ["list", "of", "strategies"],
+  "by_ticker": {
+    "TICKER": {
+      "current_price": float,
+      "strategy_fair_values": {"strategy_name": float},
+      "consensus_fair_value": float,
+      "consensus_discount": float,
+      "consensus_p25": float,
+      "consensus_p75": float
+    }
+  },
+  "fetch_errors": {"ticker": "error_message"},
+  "strategy_errors": {"ticker": {"strategy": "error_message"}},
+  "created_at": datetime.utcnow()
+}
+```
+
+### Testing
+Test your MongoDB connection:
+```bash
+python scripts/test_mongodb.py
+```
 
 ---
 

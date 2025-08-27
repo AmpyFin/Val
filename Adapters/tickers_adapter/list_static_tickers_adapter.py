@@ -19,6 +19,11 @@ class ListStaticTickersAdapter(TickersAdapter):
 
     def fetch(self) -> List[str]:
         try:
-            return ["AAPL", "MSFT", "NVDA", "NVAX", "FSLR", "AMD", "AMAT", "LRCX", "PLTR"]
+            return [
+                    "AAPL",
+                    "NVAX",
+                    
+                    ]
+
         except Exception as exc:  # pragma: no cover
             raise DataNotAvailable(f"{self._name}: unable to produce static tickers") from exc

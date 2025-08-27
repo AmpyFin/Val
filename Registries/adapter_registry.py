@@ -108,6 +108,10 @@ from adapters.tickers_adapter.combined_spy_ndaq_tickers_adapter import (
 from adapters.book_value_per_share_adapter.yfinance_bvps_adapter import YFinanceBVPSAdapter
 from adapters.book_value_per_share_adapter.fmp_bvps_adapter import FMPBVPSAdapter
 
+from adapters.dividend_ttm_adapter.yfinance_dividend_ttm_adapter import YFinanceDividendTTMAdapter
+from adapters.dividend_ttm_adapter.fmp_dividend_ttm_adapter import FMPDividendTTMAdapter
+
+
 # ---------------------------------------------------------------------------
 # Registry maps:
 #   _METRIC_PROVIDER_FACTORIES["metric"]["provider_name"] -> factory()
@@ -161,6 +165,11 @@ _METRIC_PROVIDER_FACTORIES: Dict[str, Dict[str, Callable[[], MetricAdapter]]] = 
         "yfinance_book_value_per_share": lambda: YFinanceBVPSAdapter(),
         "fmp_book_value_per_share": lambda: FMPBVPSAdapter(),
     },
+    "dividend_ttm": {
+        "yfinance_dividend_ttm": lambda: YFinanceDividendTTMAdapter(),
+        "fmp_dividend_ttm": lambda: FMPDividendTTMAdapter(),
+    },
+
 }
 
 # ---- Active selections (defaults) ----
@@ -177,6 +186,8 @@ _ACTIVE_METRIC_PROVIDER: Dict[str, str] = {
     "fcf_ttm": "yfinance_fcf_ttm",
     "net_debt": "yfinance_net_debt",
     "book_value_per_share": "yfinance_book_value_per_share",
+    "dividend_ttm": "yfinance_dividend_ttm",
+
 
 }
 

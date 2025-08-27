@@ -89,5 +89,12 @@ class EPVEBITStrategy(Strategy):
 
         ev = ebit_after_tax / k
         equity = ev - float(net_debt)
+        
+        # Economic validity: equity must be positive
+        if equity <= 0:
+            raise StrategyInputError(f"{self._name}: equity <= 0 (ev={ev:.3f}, net_debt={float(net_debt):.3f})")
+        
         fv_per_share = equity / float(sh)
+        if fv_per_share <= 0:
+            raise StrategyInputError(f"{self._name}: fair value per share <= 0")
         return float(fv_per_share)

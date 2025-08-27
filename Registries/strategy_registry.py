@@ -43,6 +43,12 @@ from strategies.gp_multiple_reversion import GPMultipleReversionStrategy
 from strategies.dcf_gordon import DCFGordonStrategy
 from strategies.epv_ebit import EPVEBITStrategy
 from strategies.residual_income import ResidualIncomeStrategy
+from strategies.ddm_two_stage import DDMTwoStageStrategy
+from strategies.graham_number import GrahamNumberStrategy
+from strategies.justified_pb_roe import JustifiedPBROEStrategy
+from strategies.justified_pe_roe import JustifiedPEROEStrategy
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +63,10 @@ _STRATEGY_FACTORIES: Dict[str, Callable[[], Strategy]] = {
     "dcf_gordon": lambda: DCFGordonStrategy(),
     "epv_ebit": lambda: EPVEBITStrategy(),
     "residual_income": lambda: ResidualIncomeStrategy(),
+    "ddm_two_stage": lambda: DDMTwoStageStrategy(),
+    "graham_number": lambda: GrahamNumberStrategy(),
+    "justified_pb_roe": lambda: JustifiedPBROEStrategy(),
+    "justified_pe_roe": lambda: JustifiedPEROEStrategy(),
 
 
 
@@ -73,7 +83,10 @@ _REQUIRED_METRICS: Dict[str, List[str]] = {
     "dcf_gordon": ["fcf_ttm", "shares_outstanding", "net_debt", "eps_cagr_5y"],  # eps_cagr_5y optional but helpful
     "epv_ebit": ["ebit_ttm", "net_debt", "shares_outstanding"],
     "residual_income": ["eps_ttm", "book_value_per_share", "eps_cagr_5y"],
-
+    "ddm_two_stage": ["dividend_ttm", "eps_cagr_5y"],
+    "graham_number": ["eps_ttm", "book_value_per_share"],
+    "justified_pb_roe": ["eps_ttm", "book_value_per_share", "dividend_ttm", "eps_cagr_5y"],
+    "justified_pe_roe": ["eps_ttm", "book_value_per_share", "dividend_ttm"],
 
 
 }
@@ -130,6 +143,30 @@ _DEFAULT_HYPERPARAMS: Dict[str, Dict[str, float]] = {
         "ri_payout_ratio": 0.30,
         # "ri_eps_growth_rate": None,  # optional explicit override
     },
+        "ddm_two_stage": {
+        "ddm_high_years": 5,
+        "ddm_discount_rate": 0.09,
+        "ddm_terminal_growth": 0.02,
+        # "ddm_high_growth_rate": None,  # optional explicit override
+    },
+        "graham_number": {
+        "graham_pe_cap": 15.0,
+        "graham_pb_cap": 1.5,
+        # "graham_multiplier": None,  # optional override of pe_cap*pb_cap
+    },
+        "justified_pb_roe": {
+        "jpbr_discount_rate": 0.10,
+        # "jpbr_growth_rate": None,  # optional explicit override
+    },
+        "justified_pe_roe": {
+        "jpe_discount_rate": 0.10,
+        "jpe_default_payout": 0.30,
+        "jpe_floor_payout": 0.05,
+        "jpe_use_forward_eps": True,
+        "jpe_max_long_run_g": 0.12,
+        # "jpe_retention_ratio": None,   # optional explicit override
+    },
+
 
 
 
@@ -147,6 +184,10 @@ _ENABLED_STRATEGIES: List[str] = [
     "dcf_gordon",
     "epv_ebit",
     "residual_income",
+    # "ddm_two_stage", # Was not working well - valued NVDA below $1 because of low dividends
+    "graham_number",
+    "justified_pb_roe",
+    "justified_pe_roe",
 ]
 
 # ---------------------------------------------------------------------------

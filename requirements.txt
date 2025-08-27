@@ -10,6 +10,9 @@ beautifulsoup4>=4.12.3
 lxml>=5.2.0
 tenacity>=8.5.0
 
+# MongoDB integration
+pymongo>=4.6.0
+
 # Yahoo Finance session management (caching + rate limiting)
 requests-cache>=1.2.1
 requests-ratelimiter>=0.7.0

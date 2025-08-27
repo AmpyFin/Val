@@ -87,6 +87,8 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument("--run-once", action="store_true", help="Run the pipeline once (default if no run flag given).")
     parser.add_argument("--loop", action="store_true", help="Run the pipeline continuously (overrides control.Run_continous).")
     parser.add_argument("--sleep", type=int, help="Seconds to sleep between runs in --loop mode (default from control.py).")
+    parser.add_argument("--mongodb", action="store_true", help="Enable MongoDB storage (clears existing valuations and stores results).")
+    parser.add_argument("--mongodb-uri", help="MongoDB connection string (defaults to MONGODB_URI env var or localhost:27017).")
 
     args = parser.parse_args(argv)
 
@@ -107,6 +109,15 @@ def main(argv: List[str] | None = None) -> int:
     if args.strategies:
         names = [s.strip() for s in args.strategies.split(",") if s.strip()]
         overrides["enabled_strategies"] = names
+    
+    # Handle MongoDB configuration
+    if args.mongodb:
+        import os
+        if args.mongodb_uri:
+            os.environ["MONGODB_CONNECTION_STRING"] = args.mongodb_uri
+        # Enable MongoDB storage
+        control.MONGODB_ENABLE = True
+        print(f"[cli] MongoDB storage enabled (URI: {os.getenv('MONGODB_CONNECTION_STRING', 'mongodb://localhost:27017/')})")
 
     # Apply overrides (or just snapshot if none) for logging
     selections = apply_pipeline_registry(overrides if overrides else None)

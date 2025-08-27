@@ -66,78 +66,68 @@ class YFinanceEPSTTMAdapter(MetricAdapter):
         except Exception:
             return None
 
+    def _normalize_key(self, s: str) -> str:
+        return "".join(ch for ch in str(s).lower() if ch.isalnum())
+
+    def _sort_cols_desc_by_date(self, df: pd.DataFrame) -> pd.DataFrame:
+        cols_dt = pd.to_datetime(df.columns, errors="coerce")
+        order = pd.Series(cols_dt, index=df.columns).sort_values(ascending=False).index
+        return df.loc[:, order]
+
+    def _sum_last4_quarters(self, ser: pd.Series) -> float:
+        # ser is indexed by columns (periods), already sorted most-recent-first
+        s = pd.to_numeric(ser, errors="coerce").replace([float("inf"), float("-inf")], pd.NA).dropna()
+        if s.empty or len(s) < 4:
+            raise DataNotAvailable(f"{self._name}: insufficient quarterly EPS values for TTM")
+        return float(s.iloc[:4].sum())
+
     def _calculate_eps_from_quarterly(self, t: yf.Ticker) -> float:
-        """Calculate EPS TTM from quarterly earnings data."""
+        """Calculate EPS TTM from quarterly data, prioritizing quarterly diluted EPS."""
+        # Prefer the newer API if present; fallback to quarterly_income_stmt
+        df: Optional[pd.DataFrame] = None
         try:
-            # Get quarterly income statement (replaces deprecated earnings)
-            df: Optional[pd.DataFrame] = None
+            df = t.get_income_stmt(freq="quarterly", pretty=True)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
             try:
                 df = t.quarterly_income_stmt  # type: ignore[attr-defined]
             except Exception:
                 df = None
+        if df is None or df.empty:
+            raise DataNotAvailable(f"{self._name}: quarterly income statement unavailable for calculation")
 
-            if df is None or not isinstance(df, pd.DataFrame) or df.empty:
-                raise DataNotAvailable(f"{self._name}: quarterly income statement unavailable for calculation")
+        df = self._sort_cols_desc_by_date(df)
 
-            # Get the last 4 quarters (TTM)
-            if len(df.columns) < 4:
-                raise DataNotAvailable(f"{self._name}: insufficient quarterly data for TTM calculation")
+        idx_map = {self._normalize_key(ix): ix for ix in df.index}
 
-            # Look for Net Income row
-            net_income_row = None
-            for row_name in ['Net Income', 'Net Income Common Stockholders']:
-                if row_name in df.index:
-                    net_income_row = row_name
-                    break
+        # 1) If a quarterly Diluted EPS row exists, just sum the last 4 quarters
+        for key in ["dilutedeps", "epsdiluted", "earningspersharediluted"]:
+            if key in idx_map:
+                return self._sum_last4_quarters(df.loc[idx_map[key]])
 
-            if net_income_row is None:
-                raise DataNotAvailable(f"{self._name}: net income not found in income statement")
+        # 2) Else compute quarterly EPS = Net income to common / Weighted avg diluted shares
+        ni_keys = [
+            "netincomecommonstockholders", "netincomeapplicabletocommon",
+            "netincome", "netincomefromcontinuingoperations",
+        ]
+        sh_keys = [
+            "weightedaveragesharesdiluted", "dilutedaverageshares", "averagesharesdiluted",
+        ]
 
-            # Sum the last 4 quarters of net income
-            last_4_quarters = df.loc[net_income_row, df.columns[:4]]  # First 4 columns (most recent)
-            total_earnings = last_4_quarters.sum()
+        ni_row = next((idx_map[k] for k in ni_keys if k in idx_map), None)
+        sh_row = next((idx_map[k] for k in sh_keys if k in idx_map), None)
+        if ni_row is None or sh_row is None:
+            raise DataNotAvailable(f"{self._name}: needed rows not found to compute quarterly EPS")
 
-            # Get shares outstanding for the most recent quarter
-            shares_df: Optional[pd.DataFrame] = None
-            try:
-                shares_df = t.quarterly_balance_sheet  # type: ignore[attr-defined]
-            except Exception:
-                shares_df = None
+        ni = pd.to_numeric(df.loc[ni_row], errors="coerce")
+        sh = pd.to_numeric(df.loc[sh_row], errors="coerce")
+        q_eps = (ni / sh).replace([float("inf"), float("-inf")], pd.NA).dropna()
 
-            if shares_df is None or not isinstance(shares_df, pd.DataFrame) or shares_df.empty:
-                # Fallback: try to get shares from info
-                info = t.info  # type: ignore[attr-defined]
-                if isinstance(info, dict):
-                    shares = info.get('sharesOutstanding')
-                    if shares is not None:
-                        shares_outstanding = _coerce(shares)
-                        if shares_outstanding is not None:
-                            eps_ttm = total_earnings / shares_outstanding
-                            return float(eps_ttm)
-                
-                raise DataNotAvailable(f"{self._name}: shares outstanding unavailable for EPS calculation")
+        if q_eps.empty or len(q_eps) < 4:
+            raise DataNotAvailable(f"{self._name}: insufficient computed quarterly EPS for TTM")
 
-            # Get shares outstanding from balance sheet
-            shares_col = shares_df.columns[0]  # Most recent quarter
-            shares_row = None
-            
-            # Try different possible row names for shares outstanding
-            for row_name in ['Share Issued', 'Shares Outstanding', 'Common Stock Shares Outstanding']:
-                if row_name in shares_df.index:
-                    shares_row = _coerce(shares_df.at[row_name, shares_col])
-                    if shares_row is not None:
-                        break
-
-            if shares_row is None:
-                raise DataNotAvailable(f"{self._name}: shares outstanding not found in balance sheet")
-
-            eps_ttm = total_earnings / shares_row
-            return float(eps_ttm)
-
-        except DataNotAvailable:
-            raise
-        except Exception as exc:
-            raise DataNotAvailable(f"{self._name}: failed to calculate EPS from quarterly data") from exc
+        return float(q_eps.iloc[:4].sum())
 
     @retry_on_rate_limit(max_retries=3, base_delay=5.0)
     def fetch(self, ticker: str) -> float:

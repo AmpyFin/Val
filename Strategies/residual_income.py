@@ -116,4 +116,9 @@ class ResidualIncomeStrategy(Strategy):
         tv_pv = tv_ri / ((1.0 + r) ** years)
 
         intrinsic_per_share = float(bvps0) + pv_ri + tv_pv
+        
+        # Economic validity: intrinsic value should not be negative
+        if intrinsic_per_share <= 0:
+            raise StrategyInputError(f"{self._name}: intrinsic value <= 0 from residual income model")
+        
         return float(intrinsic_per_share)
