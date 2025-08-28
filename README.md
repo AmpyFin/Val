@@ -224,8 +224,10 @@ Each valuation run creates a document with:
 ```json
 {
   "run_id": "unique_run_identifier",
-  "generated_at": timestamp,
-  "generated_at_iso": "ISO8601_string",
+  "run_date": "2024-08-27",  # Date when valuation was run
+  "run_datetime": "2024-08-27T15:30:45.123Z",  # Full datetime when valuation was run
+  "generated_at": timestamp,  # Original pipeline timestamp
+  "generated_at_iso": "ISO8601_string",  # Original pipeline ISO string
   "tickers": ["list", "of", "tickers"],
   "strategy_names": ["list", "of", "strategies"],
   "by_ticker": {
@@ -240,7 +242,8 @@ Each valuation run creates a document with:
   },
   "fetch_errors": {"ticker": "error_message"},
   "strategy_errors": {"ticker": {"strategy": "error_message"}},
-  "created_at": datetime.utcnow()
+  "created_at": datetime.utcnow(),  # When document was stored in MongoDB
+  "created_at_iso": "2024-08-27T15:30:45.123Z"  # When document was stored in MongoDB (ISO format)
 }
 ```
 

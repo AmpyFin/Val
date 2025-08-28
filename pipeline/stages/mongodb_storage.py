@@ -5,8 +5,10 @@ MongoDB storage for valuation results.
 Stores results in the val_trades.valuations collection with the following structure:
 {
     "run_id": "unique_run_identifier",
-    "generated_at": timestamp,
-    "generated_at_iso": "ISO8601_string",
+    "run_date": "YYYY-MM-DD",  # Date when valuation was run
+    "run_datetime": "ISO8601_string",  # Full datetime when valuation was run
+    "generated_at": timestamp,  # Original pipeline timestamp
+    "generated_at_iso": "ISO8601_string",  # Original pipeline ISO string
     "tickers": ["list", "of", "tickers"],
     "strategy_names": ["list", "of", "strategies"],
     "by_ticker": {
@@ -21,7 +23,8 @@ Stores results in the val_trades.valuations collection with the following struct
     },
     "fetch_errors": {"ticker": "error_message"},
     "strategy_errors": {"ticker": {"strategy": "error_message"}},
-    "created_at": datetime.utcnow()
+    "created_at": datetime.utcnow(),  # When document was stored in MongoDB
+    "created_at_iso": "ISO8601_string"  # When document was stored in MongoDB (ISO format)
 }
 """
 
@@ -102,9 +105,12 @@ class MongoDBStorage:
         try:
             collection = self._get_collection()
             
-            # Prepare document
+            # Prepare document with comprehensive date tracking
+            now = datetime.utcnow()
             document = {
                 "run_id": ctx.run_id,
+                "run_date": now.date().isoformat(),  # YYYY-MM-DD format
+                "run_datetime": now.isoformat() + "Z",  # Full ISO datetime with Z
                 "generated_at": ctx.generated_at,
                 "generated_at_iso": ctx.generated_at_iso,
                 "tickers": ctx.tickers,
@@ -112,7 +118,8 @@ class MongoDBStorage:
                 "by_ticker": ctx.results_by_ticker,
                 "fetch_errors": ctx.fetch_errors,
                 "strategy_errors": ctx.strategy_errors,
-                "created_at": datetime.utcnow()
+                "created_at": now,
+                "created_at_iso": now.isoformat() + "Z"
             }
             
             # Insert document
