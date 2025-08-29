@@ -198,7 +198,7 @@ _TICKERS_PROVIDER_FACTORIES: Dict[str, Callable[[], TickersAdapter]] = {
     "combined_spy_ndaq_tickers": lambda: CombinedSPYNDAQTickersAdapter(),
 }
 
-_ACTIVE_TICKERS_SOURCE: str = "list_static_tickers"
+_ACTIVE_TICKERS_SOURCE: str = "wiki_ndaq_100_tickers"
 
 # ---------------------------------------------------------------------------
 # Helpers for metrics

@@ -28,7 +28,7 @@ Json_dump_enable = True      # True = write a JSON file each run
 json_dump_dir = "out"         # directory for JSON output files (auto-created)
 
 # --- MongoDB storage (optional) ---
-MONGODB_ENABLE = True        # True = store results in MongoDB (clears existing valuations)
+MONGODB_ENABLE = False        # True = store results in MongoDB (clears existing valuations)
 
 # Normalized mirrors
 JSON_DUMP_ENABLE = bool(Json_dump_enable)

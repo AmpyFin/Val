@@ -60,6 +60,7 @@ tmp/
 *.pem
 
 # Project specific outputs
+out/
 *.out
 *.bak
 

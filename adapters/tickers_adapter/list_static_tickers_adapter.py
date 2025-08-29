@@ -20,8 +20,7 @@ class ListStaticTickersAdapter(TickersAdapter):
     def fetch(self) -> List[str]:
         try:
             return [
-                    "AAPL",
-                    "NVAX",
+                    "TSM",
                     
                     ]
 
