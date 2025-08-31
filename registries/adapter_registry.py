@@ -72,6 +72,26 @@ from adapters.ebit_ttm_adapter.yfinance_ebit_ttm_adapter import (
     YFinanceEBITTTMAdapter,
 )
 
+# EBITDA TTM
+from adapters.ebitda_ttm_adapter.yfinance_ebitda_ttm_adapter import (
+    YFinanceEBITDATTMAdapter,
+)
+
+# D&A TTM  
+from adapters.da_ttm_adapter.yfinance_da_ttm_adapter import (
+    YFinanceDATTMAdapter,
+)
+
+# R&D TTM
+from adapters.rd_ttm_adapter.yfinance_rd_ttm_adapter import (
+    YFinanceRDTTMAdapter,
+)
+
+# SG&A TTM
+from adapters.sga_ttm_adapter.yfinance_sga_ttm_adapter import (
+    YFinanceSGATTMAdapter,
+)
+
 # Gross Profit TTM
 from adapters.gross_profit_ttm_adapter.fmp_gross_profit_ttm_adapter import (
     FMPGrossProfitTTMAdapter,
@@ -110,6 +130,11 @@ from adapters.book_value_per_share_adapter.fmp_bvps_adapter import FMPBVPSAdapte
 
 from adapters.dividend_ttm_adapter.yfinance_dividend_ttm_adapter import YFinanceDividendTTMAdapter
 from adapters.dividend_ttm_adapter.fmp_dividend_ttm_adapter import FMPDividendTTMAdapter
+from adapters.rd_ttm_adapter.yfinance_rd_ttm_adapter import YFinanceRDTTMAdapter
+from adapters.sga_ttm_adapter.yfinance_sga_ttm_adapter import YFinanceSGATTMAdapter
+from adapters.revenue_growth_adapter.yfinance_rev_ttm_yoy_growth_adapter import (
+    YFinanceRevTTMYoYGrowthAdapter,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +173,18 @@ _METRIC_PROVIDER_FACTORIES: Dict[str, Dict[str, Callable[[], MetricAdapter]]] = 
         "fmp_ebit_ttm": lambda: FMPEBITTTMAdapter(),
         "yfinance_ebit_ttm": lambda: YFinanceEBITTTMAdapter(),
     },
+    "ebitda_ttm": {
+        "yfinance_ebitda_ttm": lambda: YFinanceEBITDATTMAdapter(),
+    },
+    "da_ttm": {
+        "yfinance_da_ttm": lambda: YFinanceDATTMAdapter(),
+    },
+    "rd_ttm": {
+        "yfinance_rd_ttm": lambda: YFinanceRDTTMAdapter(),
+    },
+    "sga_ttm": {
+        "yfinance_sga_ttm": lambda: YFinanceSGATTMAdapter(),
+    },
     "gross_profit_ttm": {
         "fmp_gross_profit_ttm": lambda: FMPGrossProfitTTMAdapter(),
         "yfinance_gross_profit_ttm": lambda: YFinanceGrossProfitTTMAdapter(),
@@ -169,6 +206,16 @@ _METRIC_PROVIDER_FACTORIES: Dict[str, Dict[str, Callable[[], MetricAdapter]]] = 
         "yfinance_dividend_ttm": lambda: YFinanceDividendTTMAdapter(),
         "fmp_dividend_ttm": lambda: FMPDividendTTMAdapter(),
     },
+    "rd_ttm": {
+        "yfinance_rd_ttm": lambda: YFinanceRDTTMAdapter(),
+    },
+    "sga_ttm": {
+        "yfinance_sga_ttm": lambda: YFinanceSGATTMAdapter(),
+    },
+    "rev_ttm_yoy_growth": {
+        "yfinance_rev_ttm_yoy_growth": lambda: YFinanceRevTTMYoYGrowthAdapter(),
+    },
+
 
 }
 
@@ -182,11 +229,16 @@ _ACTIVE_METRIC_PROVIDER: Dict[str, str] = {
     "shares_outstanding": "yfinance_shares_outstanding",
     "revenue_ttm": "yfinance_revenue_ttm",
     "ebit_ttm": "yfinance_ebit_ttm",
+    "ebitda_ttm": "yfinance_ebitda_ttm", 
+    "da_ttm": "yfinance_da_ttm",
+    "rd_ttm": "yfinance_rd_ttm",
+    "sga_ttm": "yfinance_sga_ttm",
     "gross_profit_ttm": "yfinance_gross_profit_ttm",
     "fcf_ttm": "yfinance_fcf_ttm",
     "net_debt": "yfinance_net_debt",
     "book_value_per_share": "yfinance_book_value_per_share",
     "dividend_ttm": "yfinance_dividend_ttm",
+    "rev_ttm_yoy_growth": "yfinance_rev_ttm_yoy_growth",
 
 
 }
@@ -198,7 +250,7 @@ _TICKERS_PROVIDER_FACTORIES: Dict[str, Callable[[], TickersAdapter]] = {
     "combined_spy_ndaq_tickers": lambda: CombinedSPYNDAQTickersAdapter(),
 }
 
-_ACTIVE_TICKERS_SOURCE: str = "wiki_ndaq_100_tickers"
+_ACTIVE_TICKERS_SOURCE: str = "list_static_tickers"
 
 # ---------------------------------------------------------------------------
 # Helpers for metrics

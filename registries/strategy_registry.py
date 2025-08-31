@@ -47,7 +47,15 @@ from strategies.ddm_two_stage import DDMTwoStageStrategy
 from strategies.graham_number import GrahamNumberStrategy
 from strategies.justified_pb_roe import JustifiedPBROEStrategy
 from strategies.justified_pe_roe import JustifiedPEROEStrategy
-
+from strategies.dcf_fcff_three_stage import DCF_FCFF_ThreeStage
+from strategies.ev_ebitda_reversion import EVEbitdaReversionStrategy
+from strategies.ev_sales_reversion import EVSalesReversionStrategy
+from strategies.hmodel_dividend import HModelDividendStrategy
+from strategies.pvgo import PVGOStrategy
+from strategies.value_driver_roic import ValueDriverROICStrategy
+from strategies.intangible_residual_income import IntangibleResidualIncomeStrategy
+from strategies.economic_value_added import EconomicValueAddedStrategy
+from strategies.saas_growth_evs_regression import SAASGrowthEVSRegressionStrategy
 
 
 
@@ -67,7 +75,15 @@ _STRATEGY_FACTORIES: Dict[str, Callable[[], Strategy]] = {
     "graham_number": lambda: GrahamNumberStrategy(),
     "justified_pb_roe": lambda: JustifiedPBROEStrategy(),
     "justified_pe_roe": lambda: JustifiedPEROEStrategy(),
-
+    "dcf_fcff_three_stage": lambda: DCF_FCFF_ThreeStage(),
+    "ev_ebitda_reversion": lambda: EVEbitdaReversionStrategy(),
+    "ev_sales_reversion":  lambda: EVSalesReversionStrategy(),
+    "hmodel_dividend": lambda: HModelDividendStrategy(),
+    "pvgo": lambda: PVGOStrategy(),
+    "value_driver_roic": lambda: ValueDriverROICStrategy(),
+    "intangible_residual_income": lambda: IntangibleResidualIncomeStrategy(),
+    "economic_value_added": lambda: EconomicValueAddedStrategy(),
+    "saas_growth_evs_regression": lambda: SAASGrowthEVSRegressionStrategy(),
 
 
 }
@@ -87,6 +103,38 @@ _REQUIRED_METRICS: Dict[str, List[str]] = {
     "graham_number": ["eps_ttm", "book_value_per_share"],
     "justified_pb_roe": ["eps_ttm", "book_value_per_share", "dividend_ttm", "eps_cagr_5y"],
     "justified_pe_roe": ["eps_ttm", "book_value_per_share", "dividend_ttm"],
+    "dcf_fcff_three_stage": ["revenue_ttm", "ebit_ttm", "shares_outstanding", "net_debt", "eps_cagr_5y"],
+        "ev_ebitda_reversion": [
+        "shares_outstanding", "net_debt",
+        "ebitda_ttm",          # preferred
+        "ebit_ttm", "da_ttm",  # fallback path (EBIT + D&A)
+        "revenue_ttm",         # last-resort D&A estimate if da_ttm missing
+    ],
+    "ev_sales_reversion": [
+        "revenue_ttm", "net_debt", "shares_outstanding",
+        "gross_profit_ttm",  # optional for GM adjustment
+    ],
+    "hmodel_dividend": ["dividend_ttm", "eps_cagr_5y"],
+    "pvgo": ["eps_ttm", "book_value_per_share", "dividend_ttm"],
+    "value_driver_roic": [
+        "revenue_ttm", "ebit_ttm", "shares_outstanding", "net_debt",
+        "book_value_per_share", "eps_cagr_5y",
+    ],
+    "intangible_residual_income": [
+        "eps_ttm", "book_value_per_share", "shares_outstanding",
+        "rd_ttm", "sga_ttm", "dividend_ttm", "eps_cagr_5y",
+    ],
+    "economic_value_added": [
+        "ebit_ttm", "shares_outstanding", "book_value_per_share", "net_debt",
+        "eps_cagr_5y",  # used for g_start fallback
+    ],
+    "saas_growth_evs_regression": [
+        "revenue_ttm", "shares_outstanding", "net_debt",
+        "gross_profit_ttm",
+        "rev_ttm_yoy_growth",     # primary growth signal
+        "eps_cagr_5y",            # optional fallback growth signal
+    ],
+
 
 
 }
@@ -166,6 +214,84 @@ _DEFAULT_HYPERPARAMS: Dict[str, Dict[str, float]] = {
         "jpe_max_long_run_g": 0.12,
         # "jpe_retention_ratio": None,   # optional explicit override
     },
+        "dcf_fcff_three_stage": {
+        "dcf_wacc": 0.10,
+        "dcf_tax_rate": 0.21,
+        "dcf_sales_to_capital": 3.0,  # More conservative (was 2.5)
+        "dcf_stage1_years": 5,
+        "dcf_stage2_years": 5,
+        # "dcf_g_short": None,         # optional; falls back to eps_cagr_5y or 0.08
+        "dcf_g_terminal": 0.025,     # Slightly higher terminal growth (was 0.02)
+        # "dcf_target_ebit_margin": None,  # optional; hold current margin if None
+        "dcf_allow_negative_reinvestment": True,  # Allow some divestment (was False)
+    },
+        "ev_ebitda_reversion": {
+        "ev_ebitda_target_multiple": 10.0,  # override per sector if desired
+        # If ebitda_ttm & da_ttm are missing, you can estimate D&A as % of revenue:
+        "ev_ebitda_da_pct_of_revenue": 0.04,  # 4% fallback; set None to disable
+    },
+    "ev_sales_reversion": {
+        "evs_target_multiple": 3.0,          # override per sector if desired
+        "evs_gm_adjust_enabled": False,      # True to scale multiple by GM/ref
+        "evs_ref_gm": 0.70,
+        "evs_min_multiple": 0.5,
+        "evs_max_multiple": 15.0,
+    },
+        "hmodel_dividend": {
+        "h_discount_rate": 0.10,
+        "h_long_run_growth": 0.02,
+        # "h_short_run_growth": None,  # optional override; else uses eps_cagr_5y or 0.10
+        "h_fade_years": 8,
+    },
+        "pvgo": {
+        "pvgo_discount_rate": 0.12,    # Increased from 0.10 to handle high-growth companies
+        "pvgo_default_payout": 0.30,
+        "pvgo_floor_payout": 0.05,
+        "pvgo_use_forward_eps": True,
+        "pvgo_cap_roe": 0.35,
+        "pvgo_cap_g": 0.10,            # Reduced from 0.12 to be more conservative
+    },
+    "value_driver_roic": {
+        "vdr_wacc": 0.10,
+        "vdr_tax_rate": 0.21,
+        "vdr_stage_years": 8,
+        # "vdr_g_start": None,            # optional; falls back to eps_cagr_5y or 0.12
+        "vdr_g_terminal": 0.02,
+        # "vdr_roic_start": None,         # optional override
+        "vdr_roic_terminal": 0.12,
+        # "vdr_ic_override": None,        # optional override
+        # "vdr_eps_cagr_fallback": None,  # optional
+    },
+    "intangible_residual_income": {
+        "iri_discount_rate": 0.10,
+        "iri_horizon_years": 8,
+        "iri_terminal_growth": 0.02,
+        # "iri_eps_growth": None,         # optional; falls back to eps_cagr_5y or 0.10
+        "iri_div_payout_floor": 0.10,
+        "rd_life_years": 5,
+        "brand_pct_of_sga": 0.30,
+        "brand_life_years": 5,
+    },
+    "economic_value_added": {
+        "eva_wacc": 0.10,
+        "eva_tax_rate": 0.21,
+        "eva_horizon_years": 8,
+        # "eva_g_capital_start": None,   # optional; falls back to eps_cagr_5y or 0.10
+        "eva_g_terminal": 0.02,
+        # "eva_roic_start": None,        # optional
+        "eva_roic_terminal": 0.12,
+    },
+    "saas_growth_evs_regression": {
+        "sg_base_multiple": 3.0,
+        "sg_beta_growth": 8.0,
+        "sg_beta_gm": 3.0,
+        "sg_gm_ref": 0.70,
+        "sg_beta_rule40": 2.0,
+        "sg_min_multiple": 0.5,
+        "sg_max_multiple": 25.0,
+    },
+
+
 
 
 
@@ -188,6 +314,17 @@ _ENABLED_STRATEGIES: List[str] = [
     "graham_number",
     "justified_pb_roe",
     "justified_pe_roe",
+    "dcf_fcff_three_stage",
+    "ev_ebitda_reversion",
+    "ev_sales_reversion",
+    "hmodel_dividend",
+    "pvgo",
+    "value_driver_roic",
+    "intangible_residual_income",
+    "economic_value_added",
+    "saas_growth_evs_regression",
+
+
 ]
 
 # ---------------------------------------------------------------------------

@@ -20,8 +20,12 @@ class ListStaticTickersAdapter(TickersAdapter):
     def fetch(self) -> List[str]:
         try:
             return [
-                    "TSM",
-                    
+                    "MRVL",
+                    "GOOGL",
+                    "AAPL",
+                    "META",
+                    "VZ",
+                    "CMCSA",
                     ]
 
         except Exception as exc:  # pragma: no cover
