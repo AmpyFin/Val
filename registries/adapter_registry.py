@@ -125,6 +125,16 @@ from adapters.tickers_adapter.wiki_ndaq_100_tickers_adapter import (
 from adapters.tickers_adapter.combined_spy_ndaq_tickers_adapter import (
     CombinedSPYNDAQTickersAdapter,
 )
+from adapters.tickers_adapter.combined_all_indices_tickers_adapter import (
+    CombinedAllIndicesTickersAdapter,
+)
+from adapters.tickers_adapter.wiki_sp400_tickers_adapter import (
+    WikiSP400TickersAdapter,
+)
+from adapters.tickers_adapter.wiki_sp600_tickers_adapter import (
+    WikiSP600TickersAdapter,
+)
+# PHLX Semiconductor adapter removed per user request
 from adapters.book_value_per_share_adapter.yfinance_bvps_adapter import YFinanceBVPSAdapter
 from adapters.book_value_per_share_adapter.fmp_bvps_adapter import FMPBVPSAdapter
 
@@ -246,8 +256,12 @@ _ACTIVE_METRIC_PROVIDER: Dict[str, str] = {
 _TICKERS_PROVIDER_FACTORIES: Dict[str, Callable[[], TickersAdapter]] = {
     "list_static_tickers": lambda: ListStaticTickersAdapter(),
     "wiki_spy_500_tickers": lambda: WikiSPY500TickersAdapter(),
+    "wiki_sp400_tickers": lambda: WikiSP400TickersAdapter(),
+    "wiki_sp600_tickers": lambda: WikiSP600TickersAdapter(),
     "wiki_ndaq_100_tickers": lambda: WikiNDAQ100TickersAdapter(),
+    # "wiki_phlx_semiconductor_tickers": removed per user request
     "combined_spy_ndaq_tickers": lambda: CombinedSPYNDAQTickersAdapter(),
+    "combined_all_indices_tickers": lambda: CombinedAllIndicesTickersAdapter(),
 }
 
 _ACTIVE_TICKERS_SOURCE: str = "list_static_tickers"
